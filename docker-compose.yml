@@ -1,0 +1,82 @@
+version: '3.8'
+
+networks:
+  ics-untrusted:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.96.0/24
+          gateway: 192.168.96.254
+
+  ics-protected:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.95.0/24
+          gateway: 192.168.95.254
+
+services:
+  gateway:
+    build: ./gateway
+    image: ics-gateway
+    container_name: ics-gateway
+    hostname: gateway
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      ics-untrusted:
+        ipv4_address: 192.168.96.10
+      ics-protected:
+        ipv4_address: 192.168.95.10
+    ports:
+      - "502:502"
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - plc
+    stdin_open: true
+    tty: true
+
+  plc:
+    build:
+      context: ./plc
+      target: normal
+    image: frosty-goop-poc:normal
+    container_name: ics-plc
+    hostname: plc
+    networks:
+      ics-protected:
+        ipv4_address: 192.168.95.2
+    ports:
+      - "5020:502"
+    volumes:
+      - ./logs:/logs
+    environment:
+      - LOG_FILE=/logs/plc.log
+      - TERM=xterm-256color
+    stdin_open: true
+    tty: true
+
+  plc-asan:
+    build:
+      context: ./plc
+      target: asan
+    image: frosty-goop-poc:asan
+    container_name: ics-plc-asan
+    hostname: plc-asan
+    ports:
+      - "5021:502"
+    volumes:
+      - ./logs:/logs
+    environment:
+      - LOG_FILE=/logs/plc-asan.log
+      - ASAN_OPTIONS=detect_leaks=0:abort_on_error=0:print_legend=0:color=always
+      - TERM=xterm-256color
+    stdin_open: true
+    tty: true
+    profiles:
+      - asan

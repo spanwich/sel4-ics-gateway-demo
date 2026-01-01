@@ -1,0 +1,43 @@
+# Runtime logs
+logs/
+
+# Claude Code config
+.claude/
+
+# Compiled binaries
+*.o
+*.so
+*.a
+cve_tools/cve_14462_attack
+cve_tools/archive/*
+!cve_tools/archive/*.c
+
+# Build artifacts
+plc/libmodbus_3.1.2/local-install/
+plc/libmodbus_3.1.2/.libs/
+plc/libmodbus_3.1.2/src/.libs/
+plc/libmodbus_3.1.2/tests/.libs/
+plc/libmodbus_3.1.2/*.log
+plc/libmodbus_3.1.2/config.status
+plc/libmodbus_3.1.2/config.cache
+plc/libmodbus_3.1.2/Makefile
+plc/libmodbus_3.1.2/src/Makefile
+plc/libmodbus_3.1.2/libtool
+plc/heating_controller
+plc/heating_controller_asan
+
+# Autotools generated
+plc/libmodbus_3.1.2/autom4te.cache/
+plc/libmodbus_3.1.2/aclocal.m4
+plc/libmodbus_3.1.2/configure
+plc/libmodbus_3.1.2/src/modbus-version.h
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store

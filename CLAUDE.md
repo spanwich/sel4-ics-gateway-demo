@@ -1,12 +1,26 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Technical documentation for Claude Code (claude.ai/code) when working with this repository.
 
 ## Project Overview
 
-This is an seL4 ICS Gateway demonstration project for defensive security research. It demonstrates how a formally verified seL4 microkernel gateway protects vulnerable industrial control systems from cyber attacks (specifically CVE-2019-14462 against libmodbus 3.1.2). The project simulates a FrostyGoop-style attack on a district heating controller.
+This is a defensive security research project comparing two ICS gateway architectures:
 
-**Security Context:** This is an authorized defensive security demonstration. The vulnerable code is intentional for educational purposes.
+1. **Protocol-Break (seL4)**: Terminates TCP, validates Modbus semantics, establishes new connection to PLC
+2. **Packet-Forwarding (Snort)**: Inspects packets inline, forwards same TCP connection to PLC
+
+The project demonstrates protection against real-world ICS attacks:
+- **CVE-2019-14462**: Heap buffer overflow in libmodbus 3.1.2 (PLC vulnerability)
+- **CVE-2022-20685**: Integer overflow in Snort Modbus preprocessor (IDS vulnerability)
+
+**Security Context:** Authorized defensive security demonstration. Vulnerable code is intentional for research purposes.
+
+## Research Goals
+
+1. Compare protocol-break vs packet-forwarding architectures for ICS security
+2. Demonstrate that IDS solutions themselves can be attacked (CVE-2022-20685)
+3. Show advantages of structural validation over signature-based detection
+4. Provide reproducible experiments for security research
 
 ## Architecture
 
@@ -84,6 +98,15 @@ The gateway requires a user-provided seL4 image at `gateway/sel4-image/capdl-loa
 │   ├── start-gateway.sh      # QEMU launcher
 │   └── sel4-image/           # User-provided seL4 kernel
 │
+├── snort/                    # Snort IDS (for comparison)
+│   ├── Dockerfile            # Snort 2.9.18 (vulnerable to CVE-2022-20685)
+│   ├── snort.conf            # Snort config with Modbus preprocessor
+│   ├── setup-network.sh      # Packet-forwarding network setup
+│   ├── start-snort.sh        # Snort launcher
+│   └── rules/                # Modbus detection rules
+│       ├── modbus.rules
+│       └── local.rules
+│
 ├── plc/                      # PLC container (vulnerable)
 │   ├── Dockerfile
 │   ├── Makefile
@@ -93,14 +116,19 @@ The gateway requires a user-provided seL4 image at `gateway/sel4-image/capdl-loa
 │   └── libmodbus_3.1.2/      # Embedded vulnerable libmodbus
 │
 ├── cve_tools/                # CVE attack tools
-│   ├── cve_14462_attack.c    # Self-contained attack (no dependencies)
+│   ├── Makefile              # Build all attack tools
+│   ├── cve_14462_attack.c    # CVE-2019-14462 libmodbus overflow
+│   ├── cve_20685_attack.c    # CVE-2022-20685 Snort IDS DoS
+│   ├── tcp_segmentation_attack.c  # TCP evasion demonstration
+│   ├── latency_benchmark.c   # Gateway latency comparison
 │   └── archive/              # Older experimental tools
 │
 ├── scripts/                  # Utility scripts
 │   ├── inspect-gateway.sh    # Network debugging
 │   ├── debug-traffic.sh      # Traffic analysis
 │   ├── test-local.sh         # Local QEMU testing
-│   └── copy-images.sh        # Image management
+│   ├── copy-images.sh        # Image management
+│   └── run_comparison.sh     # Full comparison experiment
 │
 └── archive/                  # Planning documents
     ├── frostygoop-heating-simulation.md
@@ -113,18 +141,77 @@ The gateway requires a user-provided seL4 image at `gateway/sel4-image/capdl-loa
 |------|---------|
 | `gateway/setup-network.sh` | Creates bridges, tap interfaces, policy routing |
 | `gateway/start-gateway.sh` | Launches QEMU with seL4 kernel |
+| `snort/snort.conf` | Snort config with vulnerable Modbus preprocessor |
 | `plc/heating_controller.c` | Modbus server + thermal simulation |
-| `cve_tools/cve_14462_attack.c` | Self-contained CVE-2019-14462 exploit |
+| `cve_tools/cve_14462_attack.c` | CVE-2019-14462 libmodbus heap overflow |
+| `cve_tools/cve_20685_attack.c` | CVE-2022-20685 Snort IDS DoS attack |
+| `scripts/run_comparison.sh` | Full seL4 vs Snort comparison experiment |
 
-## CVE-2019-14462 Details
+## CVE-2019-14462: libmodbus Heap Buffer Overflow
 
-The vulnerability is a heap buffer overflow in libmodbus ≤ 3.1.2 where the MBAP header length field is trusted without validation. An attacker can declare a small length (e.g., 60 bytes) while sending a much larger payload (e.g., 601 bytes), causing memory corruption.
+**Affected:** libmodbus ≤ 3.1.2
+**Type:** Heap buffer overflow
+**Vector:** Malformed MBAP header length field
+
+### Vulnerability Mechanism
+
+The MBAP (Modbus Application Protocol) header contains a length field that libmodbus trusts without validation:
+
+```
+MBAP Header (7 bytes):
+┌─────────────────┬─────────────────┬─────────────────┬──────────┐
+│ Transaction ID  │ Protocol ID     │ Length          │ Unit ID  │
+│ (2 bytes)       │ (2 bytes)       │ (2 bytes)       │ (1 byte) │
+└─────────────────┴─────────────────┴─────────────────┴──────────┘
+                                      ↑
+                                      Attacker controls this field
+```
+
+**Attack:**
+1. Declare small length (e.g., 60 bytes) in MBAP header
+2. Send much larger payload (e.g., 601 bytes)
+3. Server allocates 60-byte buffer, receives 601 bytes → heap overflow
+
+### seL4 Protection
 
 The seL4 gateway blocks this by:
-1. Terminating TCP at the gateway (protocol break)
-2. Parsing the MBAP header and extracting the declared length
-3. Comparing declared vs actual TCP payload size
-4. Rejecting mismatched packets before forwarding
+1. **Terminating TCP** at the gateway (protocol break)
+2. **Parsing MBAP header** and extracting declared length
+3. **Comparing lengths**: declared vs actual TCP payload size
+4. **Rejecting mismatches** before forwarding to PLC
+
+## CVE-2022-20685: Snort Modbus Preprocessor DoS
+
+**Affected:** Snort < 2.9.19, Snort 3 < 3.1.11.0
+**Type:** Integer overflow causing infinite loop
+**Vector:** Malformed Modbus Write File Record request
+
+### Vulnerability Mechanism
+
+The vulnerable code is in `ModbusCheckRequestLengths()` in `modbus_decode.c`:
+
+```c
+uint16_t bytes_processed;
+uint16_t record_length;  // Attacker-controlled from packet
+
+while (bytes_processed < tmp_count) {
+    record_length = *(uint16_t*)(payload + offset);
+    bytes_processed = 7 + (2 * record_length);  // INTEGER OVERFLOW!
+}
+```
+
+**Attack:**
+1. Send Write File Record (function 0x15) with `record_length = 0xFFFE`
+2. Calculation: `bytes_processed = 7 + (2 × 0xFFFE) = 0x20003`
+3. Overflow: `0x20003 & 0xFFFF = 0x0003` (uint16_t truncation)
+4. Loop condition `3 < tmp_count` remains true → **infinite loop**
+5. Snort hangs, stops processing packets → **IDS is blind**
+
+### Why seL4 is Immune
+
+- seL4 has no Modbus preprocessor (no vulnerable code path)
+- Minimal attack surface (~1000 LoC vs ~500,000 LoC)
+- Simple length validation cannot be exploited this way
 
 ## Modbus Register Map (Heating Simulation)
 
@@ -313,3 +400,115 @@ gcc -o cve_tools/cve_14462_attack cve_tools/cve_14462_attack.c
 # Test through seL4 gateway (should be blocked)
 ./cve_tools/cve_14462_attack 127.0.0.1 502
 ```
+
+## Snort IDS Comparison Experiments
+
+The project includes a Snort IDS gateway for comparing protocol-break (seL4) vs packet-forwarding (Snort) architectures.
+
+### Architecture with Snort Gateway
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Docker Network: ics-untrusted (192.168.96.0/24)                             │
+│                                                                             │
+│   ┌──────────────────────┐    ┌──────────────────────┐                     │
+│   │ seL4 Gateway         │    │ Snort IDS Gateway    │                     │
+│   │ (192.168.96.10)      │    │ (192.168.96.20)      │                     │
+│   │ Port: 502            │    │ Port: 503            │                     │
+│   │ Protocol-break       │    │ Packet-forwarding    │                     │
+│   └──────────────────────┘    └──────────────────────┘                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Docker Network: ics-protected (192.168.95.0/24)                             │
+│                                                                             │
+│   ┌──────────────────────────────────────────────────────┐                  │
+│   │ PLC Container (192.168.95.2)                         │                  │
+│   │ Vulnerable libmodbus 3.1.2                           │                  │
+│   └──────────────────────────────────────────────────────┘                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Access Paths:
+  • Port 502  → seL4 Gateway (protocol-break)     → PLC
+  • Port 503  → Snort Gateway (packet-forward)    → PLC
+  • Port 5020 → Direct bypass (no protection)     → PLC
+```
+
+### Starting Snort
+
+```bash
+# Start Snort container
+sudo docker compose up snort
+
+# Or build and run Snort only
+cd snort/
+docker build -t ics-snort .
+```
+
+### CVE-2022-20685: Snort Modbus Preprocessor DoS
+
+The Snort gateway uses version 2.9.18 which is VULNERABLE to CVE-2022-20685 - an integer overflow in the Modbus preprocessor that causes an infinite loop, effectively "blinding" the IDS.
+
+```bash
+# Compile attack tools
+cd cve_tools/
+make
+
+# Attack Snort to blind the IDS
+./cve_20685_attack 127.0.0.1 503
+
+# After attack, Snort is frozen and cannot detect subsequent attacks
+./cve_14462_attack 127.0.0.1 503  # Attack succeeds undetected
+```
+
+### Running Comparison Experiments
+
+```bash
+# Run the full comparison experiment script
+./scripts/run_comparison.sh
+```
+
+This script demonstrates:
+1. CVE-2019-14462 blocking by each gateway
+2. CVE-2022-20685 IDS DoS attack
+3. Post-DoS attack comparison (seL4 still protected, Snort blind)
+
+### Attack Tools
+
+| Tool | Description |
+|------|-------------|
+| `cve_tools/cve_14462_attack` | CVE-2019-14462 libmodbus heap overflow |
+| `cve_tools/cve_20685_attack` | CVE-2022-20685 Snort IDS DoS |
+| `cve_tools/tcp_segmentation_attack` | TCP segmentation evasion test |
+| `cve_tools/latency_benchmark` | Gateway latency comparison |
+
+### Comparison Results
+
+| Test Case | seL4 Gateway | Snort IDS |
+|-----------|--------------|-----------|
+| CVE-2019-14462 | BLOCKED (length check) | Needs rule |
+| CVE-2022-20685 | IMMUNE (no preprocessor) | VULNERABLE |
+| Post-DoS attacks | Still protected | IDS blind |
+| TCP segmentation | BLOCKED (TCP terminated) | May evade |
+| Unknown variants | BLOCKED (any mismatch) | MISS (no rule) |
+| Attack surface | ~1000 LoC | ~500k LoC |
+
+### Protocol-Break vs Packet-Forwarding
+
+**Packet Forwarding (Snort)**:
+```
+Client ──TCP──> Snort ──TCP──> PLC
+         (same connection flows through)
+```
+- Same TCP connection end-to-end
+- Attacker can manipulate TCP state
+- Timing attacks possible
+- IDS can be attacked (CVE-2022-20685)
+
+**Protocol Break (seL4)**:
+```
+Client ──TCP1──> seL4 Gateway ──TCP2──> PLC
+              (terminates, validates, new connection)
+```
+- Two independent TCP connections
+- Client cannot influence PLC's TCP state
+- Validation BEFORE any data reaches PLC
+- Minimal attack surface (~1000 LoC)

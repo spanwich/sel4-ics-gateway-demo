@@ -1,44 +1,63 @@
 # seL4 ICS Gateway Demo
 
-A defensive security demonstration showing how a formally verified seL4 microkernel gateway protects vulnerable industrial control systems from cyber attacks.
+A defensive security research project comparing **protocol-break** vs **packet-forwarding** architectures for protecting industrial control systems from cyber attacks.
 
-## Overview
+## Research Motivation
 
-This project demonstrates protection against **CVE-2019-14462** (heap buffer overflow in libmodbus 3.1.2) using an seL4-based security gateway. It simulates a FrostyGoop-style attack on a district heating controller.
+Modern ICS/SCADA systems face sophisticated attacks like [FrostyGoop](https://www.cisa.gov/news-events/cybersecurity-advisories), which targeted Ukrainian district heating systems via Modbus TCP. Traditional security solutions (firewalls, IDS) use **packet-forwarding** architectures that inspect traffic in-line but maintain a single TCP connection end-to-end.
+
+This project demonstrates an alternative: a **protocol-break** gateway using the formally verified [seL4 microkernel](https://sel4.systems/). By terminating TCP connections and validating protocol semantics before establishing new connections to protected devices, this architecture provides stronger security guarantees.
+
+## Key Findings
+
+| Aspect | Protocol-Break (seL4) | Packet-Forwarding (Snort) |
+|--------|----------------------|---------------------------|
+| **CVE-2019-14462** | BLOCKED (length validation) | Requires specific rule |
+| **CVE-2022-20685** | IMMUNE (no preprocessor) | VULNERABLE (IDS DoS) |
+| **Unknown variants** | BLOCKED (structural validation) | MISSED (no signature) |
+| **TCP state attacks** | BLOCKED (connection terminated) | Possible |
+| **Attack surface** | ~1,000 LoC | ~500,000 LoC |
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ Untrusted Network (192.168.96.0/24)                                 │
-│   └─ SCADA Client                                                   │
-│        │                                                            │
-│        ▼                                                            │
-│   ┌─────────────────────────────────────────────────────────────┐   │
-│   │ seL4 Gateway (QEMU)                                         │   │
-│   │   • Terminates TCP connections                              │   │
-│   │   • Validates Modbus MBAP length fields                     │   │
-│   │   • Blocks malformed packets (CVE-2019-14462)               │   │
-│   └─────────────────────────────────────────────────────────────┘   │
-│        │                                                            │
-│        ▼                                                            │
-├─────────────────────────────────────────────────────────────────────┤
-│ Protected Network (192.168.95.0/24)                                 │
-│   └─ PLC (District Heating Controller)                              │
-│        └─ Vulnerable libmodbus 3.1.2                                │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Docker Network: ics-untrusted (192.168.96.0/24)                             │
+│                                                                             │
+│   ┌───────────────────────┐       ┌───────────────────────┐                │
+│   │ seL4 Gateway          │       │ Snort IDS             │                │
+│   │ Port 502              │       │ Port 503              │                │
+│   │                       │       │                       │                │
+│   │ • Protocol-break      │       │ • Packet-forwarding   │                │
+│   │ • TCP termination     │       │ • Inline inspection   │                │
+│   │ • Length validation   │       │ • Rule-based detection│                │
+│   └───────────┬───────────┘       └───────────┬───────────┘                │
+│               │                               │                             │
+├───────────────┼───────────────────────────────┼─────────────────────────────┤
+│ Docker Network: ics-protected (192.168.95.0/24)                             │
+│               │                               │                             │
+│               └───────────────┬───────────────┘                             │
+│                               ▼                                             │
+│               ┌───────────────────────────────┐                             │
+│               │ PLC (District Heating)        │                             │
+│               │ Vulnerable libmodbus 3.1.2    │                             │
+│               │ Port 5020 (direct access)     │                             │
+│               └───────────────────────────────┘                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites
+## Quick Start
+
+### Prerequisites
 
 - Docker and Docker Compose v2
 - seL4 gateway kernel image (user-provided)
 - ~4GB RAM for QEMU
 
-## Quick Start
-
 ### 1. Add seL4 Image
 
-Place your seL4 kernel image at:
-```
+```bash
+# Place your seL4 kernel image at:
 gateway/sel4-image/capdl-loader-image-arm-qemu-arm-virt
 ```
 
@@ -48,88 +67,118 @@ gateway/sel4-image/capdl-loader-image-arm-qemu-arm-virt
 # Build all containers
 sudo docker compose build
 
-# Start the stack
+# Start individual containers
+sudo docker compose up plc        # PLC only
+sudo docker compose up gateway    # seL4 gateway + PLC
+sudo docker compose up snort      # Snort IDS + PLC
+
+# Start all
 sudo docker compose up
 ```
 
-### 3. Test Connection
+### 3. Test Connections
 
 ```bash
-# Through seL4 gateway (protected)
-modscan -t 127.0.0.1 -p 502
+# Through seL4 gateway (protected - protocol-break)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc localhost 502 | xxd
 
-# Direct to PLC (unprotected - for comparison)
-modscan -t 127.0.0.1 -p 5020
+# Through Snort IDS (protected - packet-forwarding)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc localhost 503 | xxd
+
+# Direct to PLC (unprotected - vulnerable)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc localhost 5020 | xxd
 ```
 
 ## Port Mappings
 
-| Port | Path | Protection |
-|------|------|------------|
-| 502 | Client → seL4 Gateway → PLC | Protected (validates Modbus) |
-| 5020 | Client → PLC (direct) | Unprotected (vulnerable) |
-| 5021 | Client → PLC (ASAN build) | For CVE verification |
+| Port | Path | Architecture | Protection |
+|------|------|--------------|------------|
+| 502 | Client → seL4 → PLC | Protocol-break | Validates Modbus structure |
+| 503 | Client → Snort → PLC | Packet-forwarding | Rule-based IDS |
+| 5020 | Client → PLC | Direct | None (vulnerable) |
+| 5021 | Client → PLC (ASAN) | Direct | CVE verification |
 
-## Architecture
+## Vulnerability Demonstrations
 
-### Components
+### CVE-2019-14462: libmodbus Heap Buffer Overflow
 
-| Component | Description |
+The PLC uses intentionally vulnerable libmodbus 3.1.2. The attack exploits trusted MBAP length fields:
+
+```bash
+# Build attack tools
+cd cve_tools && make
+
+# Attack unprotected PLC (crashes)
+./cve_14462_attack 127.0.0.1 5020
+
+# Attack through seL4 (BLOCKED)
+./cve_14462_attack 127.0.0.1 502
+
+# Attack through Snort (depends on rules)
+./cve_14462_attack 127.0.0.1 503
+```
+
+### CVE-2022-20685: Snort Modbus Preprocessor DoS
+
+Snort 2.9.18 has an integer overflow in its Modbus preprocessor. This demonstrates that IDS solutions themselves can be attacked:
+
+```bash
+# Blind the Snort IDS
+./cve_20685_attack 127.0.0.1 503
+
+# Now Snort is frozen - subsequent attacks go undetected
+./cve_14462_attack 127.0.0.1 503
+
+# seL4 is IMMUNE (no Modbus preprocessor to exploit)
+./cve_20685_attack 127.0.0.1 502  # No effect
+```
+
+### Full Comparison Experiment
+
+```bash
+# Run automated comparison
+./scripts/run_comparison.sh
+```
+
+## Protocol-Break vs Packet-Forwarding
+
+### Packet-Forwarding (Traditional IDS/IPS)
+
+```
+Client ────TCP────► Snort ────TCP────► PLC
+          (same connection flows through)
+```
+
+- Single TCP connection end-to-end
+- Attacker can manipulate TCP state
+- IDS can be attacked (CVE-2022-20685)
+- Requires signatures for each attack variant
+
+### Protocol-Break (seL4 Gateway)
+
+```
+Client ────TCP1────► seL4 ────TCP2────► PLC
+              (terminates, validates, new connection)
+```
+
+- Two independent TCP connections
+- Client cannot influence PLC's TCP state
+- Validation before any data reaches PLC
+- Catches entire classes of malformed input
+
+## Components
+
+| Directory | Description |
 |-----------|-------------|
-| `gateway/` | Ubuntu container with QEMU running seL4 |
-| `plc/` | Debian container with vulnerable heating controller |
-| `plc/libmodbus_3.1.2/` | Unpatched libmodbus (CVE-2019-14462) |
+| `gateway/` | seL4 gateway container (QEMU + seL4 kernel) |
+| `snort/` | Snort 2.9.18 IDS container (vulnerable to CVE-2022-20685) |
+| `plc/` | District heating simulation (vulnerable libmodbus 3.1.2) |
+| `cve_tools/` | Attack tools for CVE demonstrations |
+| `scripts/` | Utility and experiment scripts |
 
-### Network Configuration
+## PLC Simulation
 
-| Component | IP Address | Network |
-|-----------|------------|---------|
-| seL4 net0 | 192.168.96.2 | Untrusted (client-facing) |
-| seL4 net1 | 192.168.95.1 | Protected (PLC-facing) |
-| PLC | 192.168.95.2 | Protected |
-
-### Traffic Flow
-
-```
-Client (127.0.0.1:502)
-    │
-    ▼ Docker port mapping
-Gateway Container
-    │
-    ▼ iptables DNAT + Policy Routing
-seL4 Gateway (192.168.96.2)
-    │
-    ├─ VALID request → Forward to PLC
-    │
-    └─ INVALID request → Block & Log
-
-    │
-    ▼ New TCP connection
-PLC (192.168.95.2:502)
-```
-
-## CVE-2019-14462
-
-### Vulnerability
-
-libmodbus 3.1.2 trusts the MBAP header length field without validation. An attacker can:
-
-1. Declare a small length (e.g., 60 bytes) in the MBAP header
-2. Send a much larger payload (e.g., 601 bytes)
-3. Cause heap buffer overflow in the server
-
-### Protection
-
-The seL4 gateway blocks this attack by:
-
-1. **Terminating TCP** - Protocol break between client and PLC
-2. **Parsing MBAP header** - Extracts declared length field
-3. **Validating length** - Compares declared vs actual payload size
-4. **Blocking mismatches** - Drops packets before reaching PLC
-
-## PLC Simulation (District Heating)
-
-The PLC simulates a district heating controller with these Modbus registers:
+The PLC simulates a district heating controller with Modbus registers:
 
 | Register | Description | R/W |
 |----------|-------------|-----|
@@ -138,140 +187,22 @@ The PLC simulates a district heating controller with these Modbus registers:
 | HR[2] | Temperature setpoint (°C ÷10) | R/W |
 | HR[3] | Mode (0=Manual, 1=Auto) | R/W |
 | HR[4] | Outside temperature (°C ÷10) | R |
-| HR[5] | Status code | R |
-| HR[6] | Actual valve position (%) | R |
-| HR[7] | Supply temperature (°C ÷10) | R |
-| HR[8] | Runtime (seconds) | R |
-| HR[9] | Heater power (kW ÷10) | R |
-
-## Building Individual Components
-
-### Gateway Container
-```bash
-cd gateway/
-docker build -t ics-gateway .
-```
-
-### PLC Container
-```bash
-cd plc/
-
-# Normal build
-docker build --target normal -t ics-plc:normal .
-
-# AddressSanitizer build (for CVE proof)
-docker build --target asan -t ics-plc:asan .
-```
-
-### libmodbus (for local testing)
-```bash
-cd plc/libmodbus_3.1.2/
-./autogen.sh
-./configure --prefix=/usr/local
-make -j$(nproc)
-sudo make install && sudo ldconfig
-```
-
-## Testing CVE-2019-14462
-
-### Compile Attack Tool
-```bash
-gcc -o cve_tools/cve_14462_attack cve_tools/cve_14462_attack.c
-```
-
-### Test Against Unprotected PLC (should crash)
-```bash
-./cve_tools/cve_14462_attack 127.0.0.1 5020
-```
-
-### Test Through seL4 Gateway (should be blocked)
-```bash
-./cve_tools/cve_14462_attack 127.0.0.1 502
-```
-
-## Debugging
-
-### Inspect Gateway Network
-```bash
-sudo ./scripts/inspect-gateway.sh
-```
-
-### Capture Traffic
-```bash
-# Client → seL4 (untrusted side)
-sudo docker exec ics-gateway tcpdump -i br0 -n -e
-
-# seL4 → PLC (protected side)
-sudo docker exec ics-gateway tcpdump -i br1 -n -e
-```
-
-### View Logs
-```bash
-# Gateway log (seL4 output)
-sudo docker compose logs gateway
-
-# PLC log
-sudo docker compose logs plc
-```
-
-### Local Testing (without Docker)
-```bash
-# Start PLC on port 5020
-sudo docker compose up plc
-
-# Run seL4 locally with QEMU
-./scripts/test-local.sh
-
-# Test via localhost:5502
-modscan -t 127.0.0.1 -p 5502
-```
-
-## Files
-
-```
-.
-├── CLAUDE.md               # Detailed technical documentation
-├── README.md               # This file
-├── docker-compose.yml      # Container orchestration
-│
-├── gateway/                # seL4 gateway container
-│   ├── Dockerfile
-│   ├── setup-network.sh    # Bridge/tap/iptables setup
-│   ├── start-gateway.sh    # QEMU launcher
-│   └── sel4-image/         # Place seL4 kernel here
-│
-├── plc/                    # Vulnerable PLC container
-│   ├── Dockerfile
-│   ├── Makefile
-│   ├── heating_controller.c
-│   ├── process_sim.c/h     # Thermal simulation
-│   ├── display.c/h         # Console visualization
-│   └── libmodbus_3.1.2/    # Vulnerable library (embedded)
-│
-├── cve_tools/              # CVE attack tools
-│   ├── cve_14462_attack.c  # Self-contained exploit
-│   └── archive/            # Older experimental tools
-│
-├── scripts/                # Utility scripts
-│   ├── inspect-gateway.sh
-│   ├── debug-traffic.sh
-│   └── test-local.sh
-│
-└── archive/                # Planning documents
-```
+| HR[5-9] | Status, position, supply temp, runtime, power | R |
 
 ## Security Notice
 
-This project contains **intentionally vulnerable code** for educational and defensive security research purposes. The vulnerable libmodbus 3.1.2 is included to demonstrate the protection capabilities of the seL4 gateway.
+This project contains **intentionally vulnerable code** for defensive security research. The vulnerable libmodbus 3.1.2 and Snort 2.9.18 are included to demonstrate security concepts.
 
-**Do not deploy the unprotected PLC (port 5020) in production environments.**
-
-## License
-
-This project is for authorized defensive security research and educational purposes.
+**Do not deploy unprotected components in production environments.**
 
 ## References
 
 - [CVE-2019-14462](https://nvd.nist.gov/vuln/detail/CVE-2019-14462) - libmodbus heap buffer overflow
+- [CVE-2022-20685](https://nvd.nist.gov/vuln/detail/CVE-2022-20685) - Snort Modbus preprocessor DoS
 - [seL4 Microkernel](https://sel4.systems/) - Formally verified microkernel
+- [Claroty Research](https://claroty.com/team82/research/blinding-snort-breaking-the-modbus-ot-preprocessor) - Snort vulnerability analysis
 - [FrostyGoop](https://www.cisa.gov/news-events/cybersecurity-advisories) - ICS malware targeting heating systems
+
+## License
+
+For authorized defensive security research and educational purposes only.

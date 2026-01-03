@@ -80,3 +80,30 @@ services:
     tty: true
     profiles:
       - asan
+
+  # Snort IDS (VULNERABLE to CVE-2022-20685)
+  # Uses packet-forwarding architecture for comparison with seL4's protocol-break
+  snort:
+    build: ./snort
+    image: ics-snort
+    container_name: ics-snort
+    hostname: snort
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ics-untrusted:
+        ipv4_address: 192.168.96.20
+      ics-protected:
+        ipv4_address: 192.168.95.20
+    ports:
+      - "503:502"
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - plc
+    environment:
+      - TERM=xterm-256color
+    stdin_open: true
+    tty: true

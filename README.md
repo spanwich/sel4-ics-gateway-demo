@@ -4,7 +4,7 @@ A defensive security research project comparing **protocol-break** vs **packet-f
 
 ## Research Motivation
 
-Modern ICS/SCADA systems face sophisticated attacks like [FrostyGoop](https://www.cisa.gov/news-events/cybersecurity-advisories), which targeted Ukrainian district heating systems via Modbus TCP. Traditional security solutions (firewalls, IDS) use **packet-forwarding** architectures that inspect traffic in-line but maintain a single TCP connection end-to-end.
+Modern ICS/SCADA systems face sophisticated attacks like [FrostyGoop](https://www.dragos.com/blog/protect-against-frostygoop-ics-malware-targeting-operational-technology), which targeted Ukrainian district heating systems via Modbus TCP in January 2024, leaving 600+ households without heat during sub-zero temperatures. Traditional security solutions (firewalls, IDS) use **packet-forwarding** architectures that inspect traffic in-line but maintain a single TCP connection end-to-end.
 
 This project demonstrates an alternative: a **protocol-break** gateway using the formally verified [seL4 microkernel](https://sel4.systems/). By terminating TCP connections and validating protocol semantics before establishing new connections to protected devices, this architecture provides stronger security guarantees.
 
@@ -144,6 +144,16 @@ sudo docker compose restart snort
 
 **Why this is devastating:** Snort uses NFQUEUE inline mode, meaning packets are held in kernel queue until Snort returns a verdict. When Snort hangs, no verdicts are returned, and ALL traffic stops - not just IDS blindness, but complete denial of service.
 
+### Demo Scripts
+
+```bash
+# Full demo with 4 quadrants (PLC, seL4, Snort, User terminal)
+./scripts/demo.sh
+
+# Snort-only demo with 3 panes (PLC, Snort, User terminal)
+./scripts/demo-snort.sh
+```
+
 ### Full Comparison Experiment
 
 ```bash
@@ -211,8 +221,9 @@ This project contains **intentionally vulnerable code** for defensive security r
 - [CVE-2019-14462](https://nvd.nist.gov/vuln/detail/CVE-2019-14462) - libmodbus heap buffer overflow
 - [CVE-2022-20685](https://nvd.nist.gov/vuln/detail/CVE-2022-20685) - Snort Modbus preprocessor DoS
 - [seL4 Microkernel](https://sel4.systems/) - Formally verified microkernel
-- [Claroty Research](https://claroty.com/team82/research/blinding-snort-breaking-the-modbus-ot-preprocessor) - Snort vulnerability analysis
-- [FrostyGoop](https://www.cisa.gov/news-events/cybersecurity-advisories) - ICS malware targeting heating systems
+- [Claroty Team82](https://claroty.com/team82/research/blinding-snort-breaking-the-modbus-ot-preprocessor) - Snort CVE-2022-20685 vulnerability analysis
+- [Dragos FrostyGoop Report](https://www.dragos.com/blog/protect-against-frostygoop-ics-malware-targeting-operational-technology) - ICS malware analysis (Jan 2024 Ukraine attack)
+- [The Record - FrostyGoop](https://therecord.media/frostygoop-malware-ukraine-heat) - 600 Ukrainian households without heat
 
 ## License
 

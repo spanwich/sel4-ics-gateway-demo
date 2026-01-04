@@ -1,6 +1,11 @@
 #!/bin/bash
-# Start script for Snort IDS Gateway
-# Runs Snort 2.9.18 (VULNERABLE to CVE-2022-20685) in inline/IPS mode
+# Start script for Snort IDS Gateway - NFQUEUE Inline Mode
+# Runs Snort 2.9.18 (VULNERABLE to CVE-2022-20685) as true inline IPS
+#
+# NFQUEUE mode means:
+# - iptables sends packets to kernel queue
+# - Snort receives packets, inspects them, returns ACCEPT/DROP
+# - If Snort hangs (CVE-2022-20685), packets stay in queue = traffic stops!
 #
 # For defensive security research demonstration.
 
@@ -10,73 +15,75 @@ LOG="/logs/snort-gateway.log"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
 log "=============================================="
-log "  Snort IDS Gateway (VULNERABLE)"
+log "  Snort IDS Gateway - NFQUEUE Inline Mode"
 log "  Version: 2.9.18 (CVE-2022-20685 present)"
 log "=============================================="
 
-# Setup network
+# Setup network (creates NFQUEUE rules)
 log "Setting up network..."
 /usr/local/bin/setup-network.sh
 
 # Wait for network to stabilize
 sleep 2
 
-# Detect interfaces
-ETH0_IP=$(ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1 || echo "")
-ETH1_IP=$(ip -4 addr show eth1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1 || echo "")
+# Create directories
+mkdir -p /var/run/snort /var/log/snort
 
-if [[ "$ETH0_IP" == 192.168.96.* ]]; then
-    UNTRUSTED_ETH="eth0"
-    PROTECTED_ETH="eth1"
-elif [[ "$ETH1_IP" == 192.168.96.* ]]; then
-    UNTRUSTED_ETH="eth1"
-    PROTECTED_ETH="eth0"
-else
-    log "WARNING: Cannot determine dual-network setup, using eth0 for both"
-    UNTRUSTED_ETH="eth0"
-    PROTECTED_ETH="eth0"
-fi
-
-log "Interfaces: untrusted=$UNTRUSTED_ETH, protected=$PROTECTED_ETH"
-
-# Create pid directory
-mkdir -p /var/run/snort
-
-# Check if Snort can run inline (requires afpacket DAQ)
+# Check DAQ modules available
+log ""
 log "Checking DAQ modules..."
-snort --daq-list 2>&1 | head -20 | tee -a "$LOG"
+snort --daq-list 2>&1 | tee -a "$LOG"
 
-log ""
-log "Starting Snort in IDS mode (packet inspection)..."
-log "Modbus preprocessor ENABLED (vulnerable to CVE-2022-20685)"
-log ""
-log "Attack this container with:"
-log "  ./cve_tools/cve_20685_attack 127.0.0.1 503"
-log ""
-log "This will trigger an infinite loop in the Modbus preprocessor,"
-log "causing Snort to stop processing packets (IDS blindness)."
-log ""
+# Verify nfq module is available
+if ! snort --daq-list 2>&1 | grep -q "nfq"; then
+    log "ERROR: nfq DAQ module not available!"
+    log "Cannot run in inline mode. Falling back to passive mode."
 
-# Try inline mode first, fall back to IDS mode
-if snort --daq-list 2>&1 | grep -q "afpacket"; then
-    log "Starting Snort in INLINE mode (IPS)..."
+    # Fallback: remove NFQUEUE rules, use simple forwarding
+    iptables -F FORWARD
+    iptables -A FORWARD -j ACCEPT
 
-    # Configure afpacket inline bridge
-    # Note: In Docker, we use iptables forwarding instead of true inline bridging
+    UNTRUSTED_IF=$(cat /tmp/untrusted_if 2>/dev/null || echo "eth0")
     exec snort -c /etc/snort/snort.conf \
-        -i $UNTRUSTED_ETH \
+        -i $UNTRUSTED_IF \
         -A console \
-        -q \
         -l /var/log/snort \
         --daq pcap \
         --daq-mode passive \
         -k none
-else
-    log "afpacket not available, starting in passive IDS mode..."
-    exec snort -c /etc/snort/snort.conf \
-        -i $UNTRUSTED_ETH \
-        -A console \
-        -q \
-        -l /var/log/snort \
-        -k none
 fi
+
+log ""
+log "╔════════════════════════════════════════════════════════════════╗"
+log "║  Starting Snort in NFQUEUE Inline Mode                         ║"
+log "╠════════════════════════════════════════════════════════════════╣"
+log "║                                                                ║"
+log "║  Modbus preprocessor ENABLED (vulnerable to CVE-2022-20685)    ║"
+log "║                                                                ║"
+log "║  Attack this container with:                                   ║"
+log "║    ./cve_tools/cve_20685_attack 127.0.0.1 503                  ║"
+log "║                                                                ║"
+log "║  Expected result:                                              ║"
+log "║    • Snort enters infinite loop in Modbus preprocessor         ║"
+log "║    • NFQUEUE stops receiving verdicts                          ║"
+log "║    • ALL Modbus traffic to PLC stops completely                ║"
+log "║    • Snort CPU goes to 100%                                    ║"
+log "║                                                                ║"
+log "║  Verify with:                                                  ║"
+log "║    modscan -t 127.0.0.1 -p 503  (before: works, after: hangs)  ║"
+log "║    docker exec ics-snort top     (should show 100% CPU)        ║"
+log "║                                                                ║"
+log "╚════════════════════════════════════════════════════════════════╝"
+log ""
+
+# Start Snort with NFQUEUE DAQ
+# -Q enables inline mode (required for nfq)
+# --daq nfq uses the netfilter queue module
+# --daq-var queue=0 specifies queue number (matches iptables NFQUEUE rule)
+exec snort -c /etc/snort/snort.conf \
+    -Q \
+    -A console \
+    -l /var/log/snort \
+    --daq nfq \
+    --daq-var queue=0 \
+    -k none

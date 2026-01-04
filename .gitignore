@@ -9,8 +9,14 @@ logs/
 *.so
 *.a
 cve_tools/cve_14462_attack
+cve_tools/cve_20685_attack
+cve_tools/tcp_segmentation_attack
+cve_tools/latency_benchmark
 cve_tools/archive/*
 !cve_tools/archive/*.c
+
+# Snort source (downloaded, can be re-fetched)
+snort/snort-2.9.18/
 
 # Build artifacts
 plc/libmodbus_3.1.2/local-install/

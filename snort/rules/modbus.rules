@@ -131,11 +131,12 @@ alert tcp any any -> $MODBUS_SERVER $MODBUS_PORTS ( \
 # ============================================================
 
 # Modbus exception responses (function code | 0x80)
+# Exception responses have the high bit set in the function code byte
 alert tcp $MODBUS_SERVER $MODBUS_PORTS -> any any ( \
     msg:"MODBUS Exception Response"; \
     flow:from_server,established; \
-    modbus_func; \
-    byte_test:1,&,0x80,0,relative; \
+    content:"|00 00|"; offset:2; depth:2; \
+    byte_test:1,&,0x80,7; \
     classtype:protocol-command-decode; \
     sid:1000200; \
     rev:1; \

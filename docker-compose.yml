@@ -82,7 +82,12 @@ services:
       - asan
 
   # Snort IDS (VULNERABLE to CVE-2022-20685)
-  # Uses packet-forwarding architecture for comparison with seL4's protocol-break
+  # Uses NFQUEUE inline mode - true IPS that blocks traffic when it hangs
+  # Demonstrates packet-forwarding architecture vs seL4's protocol-break
+  #
+  # Traffic flow:
+  #   Host:503 → Container:502 → iptables DNAT → NFQUEUE → Snort → PLC:502
+  #
   snort:
     build: ./snort
     image: ics-snort

@@ -56,22 +56,28 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Networks
-        UN["ics-untrusted\n192.168.96.0/24"]
-        PR["ics-protected\n192.168.95.0/24"]
+    subgraph Untrusted["ics-untrusted (192.168.96.0/24)"]
+        UN_GW["192.168.96.10"]
+        UN_SN["192.168.96.20"]
     end
 
-    subgraph Containers
+    subgraph Containers[" "]
         GW["ics-gateway"]
         SN["ics-snort"]
         PLC["ics-plc"]
     end
 
-    UN --- GW
-    UN --- SN
-    PR --- GW
-    PR --- SN
-    PR --- PLC
+    subgraph Protected["ics-protected (192.168.95.0/24)"]
+        PR_GW["192.168.95.10"]
+        PR_SN["192.168.95.20"]
+        PR_PLC["192.168.95.2"]
+    end
+
+    UN_GW --- GW
+    UN_SN --- SN
+    GW --- PR_GW
+    SN --- PR_SN
+    PLC --- PR_PLC
 ```
 
 | Container | ics-untrusted | ics-protected |
@@ -87,30 +93,34 @@ The gateway container runs QEMU with the seL4 microkernel inside.
 ```mermaid
 flowchart TB
     subgraph Docker["ics-gateway Container"]
-        ETH0["eth0\n(untrusted)"]
-        ETH1["eth1\n(protected)"]
-        BR0["br0"]
-        BR1["br1"]
-        TAP0["tap0"]
-        TAP1["tap1"]
+        subgraph Untrusted["Untrusted Side"]
+            ETH0["eth0"]
+            BR0["br0"]
+            TAP0["tap0"]
+        end
+
+        ETH0 --> BR0 --> TAP0
 
         subgraph QEMU["QEMU VM"]
             NET0["net0\n192.168.96.2"]
-            NET1["net1\n192.168.95.1"]
             subgraph SEL4["seL4 Microkernel"]
-                APP["ICS Gateway App"]
+                APP["ICS Gateway App\n(validate & forward)"]
             end
-            NET0 --- APP
-            APP --- NET1
+            NET1["net1\n192.168.95.1"]
         end
 
-        ETH0 --- BR0
-        BR0 --- TAP0
-        TAP0 --- NET0
+        TAP0 --> NET0
+        NET0 --> APP
+        APP --> NET1
 
-        ETH1 --- BR1
-        BR1 --- TAP1
-        TAP1 --- NET1
+        subgraph Protected["Protected Side"]
+            TAP1["tap1"]
+            BR1["br1"]
+            ETH1["eth1"]
+        end
+
+        NET1 --> TAP1
+        TAP1 --> BR1 --> ETH1
     end
 ```
 
@@ -126,45 +136,40 @@ flowchart TB
 Snort operates in inline IPS mode using NFQUEUE.
 
 ```mermaid
-flowchart TB
+flowchart LR
+    IN["Incoming\nPacket"]
+
     subgraph Docker["ics-snort Container"]
         subgraph Kernel["Linux Kernel"]
-            NF["netfilter"]
-            NFQ["NFQUEUE 0"]
+            NF["netfilter\nFORWARD chain"]
+            NFQ["NFQUEUE"]
         end
 
-        subgraph Userspace
-            SNORT["Snort Process"]
-            DAQ["DAQ NFQ Module"]
+        subgraph Userspace["Userspace"]
+            SNORT["Snort\n(inspect)"]
         end
 
-        NF -->|"FORWARD chain"| NFQ
-        NFQ <-->|"verdict"| DAQ
-        DAQ <--> SNORT
+        NF --> NFQ
+        NFQ -->|"packet"| SNORT
+        SNORT -->|"verdict"| NFQ
+        NFQ --> NF
     end
 
-    IN["Incoming\nPacket"] --> NF
-    NF -->|"ACCEPT"| OUT["Outgoing\nPacket"]
+    OUT["Outgoing\nPacket"]
+
+    IN --> NF
+    NF -->|"ACCEPT"| OUT
 ```
 
-### NFQUEUE Flow
+### How NFQUEUE Works
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Kernel as Linux Kernel
-    participant NFQ as NFQUEUE
-    participant Snort
-    participant PLC
+1. Packet arrives at `netfilter` FORWARD chain
+2. iptables rule sends packet to `NFQUEUE`
+3. Snort receives packet, inspects with preprocessors
+4. Snort returns verdict: `ACCEPT` or `DROP`
+5. Kernel forwards or drops based on verdict
 
-    Client->>Kernel: TCP Packet
-    Kernel->>NFQ: Forward to queue 0
-    NFQ->>Snort: Packet for inspection
-    Snort->>Snort: Analyze with preprocessors
-    Snort->>NFQ: Verdict (ACCEPT/DROP)
-    NFQ->>Kernel: Apply verdict
-    Kernel->>PLC: Forward packet
-```
+**Key point:** Packets are held in queue until Snort responds. If Snort hangs (CVE-2022-20685), all traffic stops.
 
 ## PLC Container
 

@@ -2,7 +2,10 @@
 
 A defensive security research project comparing **protocol-break** vs **packet-forwarding** architectures for protecting industrial control systems from cyber attacks.
 
-> **Documentation:** [Architecture & CVE Details](docs/ARCHITECTURE.md) - Network diagrams, container architecture, and vulnerability explanations.
+> **Documentation:**
+> - [Network Architecture](docs/NETWORK.md) - Network diagrams and traffic flow
+> - [Container Architecture](docs/CONTAINERS.md) - Docker container relationships
+> - [CVE Explanations](docs/CVE.md) - Vulnerability details and attack mechanisms
 
 ## Research Motivation
 
@@ -198,7 +201,7 @@ Client ────TCP1────► seL4 ────TCP2────► PLC
 | `plc/` | District heating simulation (vulnerable libmodbus 3.1.2) |
 | `cve_tools/` | Attack tools for CVE demonstrations |
 | `scripts/` | Utility and experiment scripts |
-| `docs/` | [Architecture documentation](docs/ARCHITECTURE.md) with Mermaid diagrams |
+| `docs/` | Documentation with Mermaid diagrams ([Network](docs/NETWORK.md), [Containers](docs/CONTAINERS.md), [CVEs](docs/CVE.md)) |
 
 ## PLC Simulation
 

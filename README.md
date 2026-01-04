@@ -2,6 +2,8 @@
 
 A defensive security research project comparing **protocol-break** vs **packet-forwarding** architectures for protecting industrial control systems from cyber attacks.
 
+> **Documentation:** [Architecture & CVE Details](docs/ARCHITECTURE.md) - Network diagrams, container architecture, and vulnerability explanations.
+
 ## Research Motivation
 
 Modern ICS/SCADA systems face sophisticated attacks like [FrostyGoop](https://www.dragos.com/blog/protect-against-frostygoop-ics-malware-targeting-operational-technology), which targeted Ukrainian district heating systems via Modbus TCP in January 2024, leaving 600+ households without heat during sub-zero temperatures. Traditional security solutions (firewalls, IDS) use **packet-forwarding** architectures that inspect traffic in-line but maintain a single TCP connection end-to-end.
@@ -196,6 +198,7 @@ Client ────TCP1────► seL4 ────TCP2────► PLC
 | `plc/` | District heating simulation (vulnerable libmodbus 3.1.2) |
 | `cve_tools/` | Attack tools for CVE demonstrations |
 | `scripts/` | Utility and experiment scripts |
+| `docs/` | [Architecture documentation](docs/ARCHITECTURE.md) with Mermaid diagrams |
 
 ## PLC Simulation
 

@@ -116,18 +116,40 @@ static void *process_thread(void *arg) {
 }
 
 /* ==========================================================================
- * Modbus Handler - Processes client requests
+ * Modbus Handler - Processes client requests (one thread per client)
  * ========================================================================== */
 
-static void handle_modbus_client(modbus_t *ctx) {
+typedef struct {
+    int client_socket;
+    int client_id;
+} client_thread_args_t;
+
+static void *client_thread(void *arg) {
+    client_thread_args_t *args = (client_thread_args_t *)arg;
+    int client_socket = args->client_socket;
+    int client_id = args->client_id;
+    free(args);
+
+    /* Create a new Modbus context for this client */
+    modbus_t *ctx = modbus_new_tcp(NULL, 0);
+    if (!ctx) {
+        log_msg("ERROR", "Client %d: Failed to create context", client_id);
+        close(client_socket);
+        return NULL;
+    }
+
+    modbus_set_socket(ctx, client_socket);
+
     uint8_t query[MODBUS_TCP_MAX_ADU_LENGTH];
     int rc;
+
+    log_msg("INFO", "Client %d: Handler thread started", client_id);
 
     while (g_running && g_process.controller_running) {
         rc = modbus_receive(ctx, query);
 
         if (rc > 0) {
-            log_msg("INFO", "Received Modbus request: %d bytes", rc);
+            log_msg("INFO", "Client %d: Received %d bytes", client_id, rc);
 
             /*
              * VULNERABILITY: CVE-2019-14462
@@ -142,20 +164,39 @@ static void handle_modbus_client(modbus_t *ctx) {
             rc = modbus_reply(ctx, query, rc, g_mb_mapping);
 
             if (rc == -1) {
-                log_msg("ERROR", "modbus_reply failed: %s", modbus_strerror(errno));
+                log_msg("ERROR", "Client %d: modbus_reply failed: %s",
+                        client_id, modbus_strerror(errno));
                 break;
             }
 
             /* Check if client wrote to registers */
             process_from_registers(&g_process, g_mb_mapping->tab_registers);
 
-            log_msg("INFO", "Sent Modbus reply: %d bytes", rc);
+            log_msg("INFO", "Client %d: Sent %d bytes", client_id, rc);
 
         } else if (rc == -1) {
             /* Connection closed or error */
             break;
         }
     }
+
+    log_msg("INFO", "Client %d: Disconnected", client_id);
+
+    modbus_close(ctx);
+    modbus_free(ctx);
+
+    pthread_mutex_lock(&g_client_mutex);
+    g_client_count--;
+    pthread_mutex_unlock(&g_client_mutex);
+
+    /* Check if we crashed (CVE triggered) */
+    if (!g_process.controller_running) {
+        log_msg("ERROR", "Controller crashed! Valve frozen at %d%%",
+                g_process.valve_actual);
+        process_controller_crash(&g_process);
+    }
+
+    return NULL;
 }
 
 /* ==========================================================================
@@ -226,58 +267,82 @@ int main(void) {
         goto cleanup;
     }
 
-    /* Main loop - accept and handle Modbus clients */
+    /* Main loop - accept and spawn thread per client */
+    int client_id = 0;
     while (g_running) {
-        log_msg("INFO", "Waiting for client connection...");
+        log_msg("INFO", "Waiting for client connection... (%d active)",
+                g_client_count);
 
-        rc = modbus_tcp_accept(g_modbus_ctx, &server_socket);
-        if (rc == -1) {
+        /* Accept new connection */
+        int client_socket = accept(server_socket, NULL, NULL);
+        if (client_socket == -1) {
             if (g_running) {
-                log_msg("ERROR", "Accept failed: %s", modbus_strerror(errno));
+                log_msg("ERROR", "Accept failed: %s", strerror(errno));
             }
             continue;
         }
 
         pthread_mutex_lock(&g_client_mutex);
         g_client_count++;
+        int current_clients = g_client_count;
         pthread_mutex_unlock(&g_client_mutex);
 
-        log_msg("INFO", "Client connected");
+        client_id++;
+        log_msg("INFO", "Client %d connected (%d total)", client_id, current_clients);
 
-        /* Handle this client */
-        handle_modbus_client(g_modbus_ctx);
-
-        pthread_mutex_lock(&g_client_mutex);
-        g_client_count--;
-        pthread_mutex_unlock(&g_client_mutex);
-
-        log_msg("INFO", "Client disconnected");
-
-        /* Check if we crashed (CVE triggered) */
-        if (!g_process.controller_running) {
-            log_msg("ERROR", "Controller crashed! Valve frozen at %d%%",
-                    g_process.valve_actual);
-            process_controller_crash(&g_process);
+        /* Prepare thread arguments */
+        client_thread_args_t *args = malloc(sizeof(client_thread_args_t));
+        if (!args) {
+            log_msg("ERROR", "Failed to allocate thread args");
+            close(client_socket);
+            pthread_mutex_lock(&g_client_mutex);
+            g_client_count--;
+            pthread_mutex_unlock(&g_client_mutex);
+            continue;
         }
+        args->client_socket = client_socket;
+        args->client_id = client_id;
 
-        modbus_close(g_modbus_ctx);
+        /* Spawn detached thread for this client */
+        pthread_t tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+        rc = pthread_create(&tid, &attr, client_thread, args);
+        pthread_attr_destroy(&attr);
+
+        if (rc != 0) {
+            log_msg("ERROR", "Failed to create client thread: %d", rc);
+            free(args);
+            close(client_socket);
+            pthread_mutex_lock(&g_client_mutex);
+            g_client_count--;
+            pthread_mutex_unlock(&g_client_mutex);
+        }
     }
 
     /* Wait for process thread */
     pthread_join(process_tid, NULL);
 
 cleanup:
-    log_msg("INFO", "Shutting down...");
+    log_msg("INFO", "Shutting down... (waiting for %d clients)", g_client_count);
+
+    /* Close server socket to stop accepting new connections */
+    if (server_socket != -1) {
+        close(server_socket);
+    }
+
+    /* Brief wait for client threads to finish */
+    for (int i = 0; i < 10 && g_client_count > 0; i++) {
+        usleep(100000);  /* 100ms */
+    }
 
     if (g_mb_mapping) {
         modbus_mapping_free(g_mb_mapping);
     }
     if (g_modbus_ctx) {
-        modbus_close(g_modbus_ctx);
         modbus_free(g_modbus_ctx);
-    }
-    if (server_socket != -1) {
-        close(server_socket);
     }
 
     process_cleanup(&g_process);

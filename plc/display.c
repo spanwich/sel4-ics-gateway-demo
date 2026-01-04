@@ -31,7 +31,7 @@ void format_runtime(uint32_t seconds, char *buffer, size_t size) {
 
 static void render_temp_bar(double temp, double setpoint) {
     /* Bar spans -20 to 40°C (60 degree range) */
-    const int bar_width = 50;
+    const int bar_width = 20;
     const double temp_min = -20.0;
     const double temp_max = 40.0;
 
@@ -58,7 +58,7 @@ static void render_temp_bar(double temp, double setpoint) {
     }
 
     /* Render bar */
-    printf("   │      │");
+    printf("│ ");
     for (int i = 0; i < bar_width; i++) {
         if (i == setpoint_pos) {
             printf("%s│%s", COLOR_CYAN, COLOR_RESET);
@@ -68,7 +68,7 @@ static void render_temp_bar(double temp, double setpoint) {
             printf("░");
         }
     }
-    printf("│          │\n");
+    printf(" │\n");
 }
 
 /* ==========================================================================
@@ -139,102 +139,84 @@ void display_render(const process_state_t *state, int clients,
     /* Clear and render */
     display_clear();
 
-    printf("╔══════════════════════════════════════════════════════════════════════════════╗\n");
-    printf("║            DISTRICT HEATING CONTROLLER - BUILDING 47, ZONE 3                 ║\n");
-    printf("║               FrostyGoop Target Simulation (libmodbus 3.1.2)                 ║\n");
-    printf("╠══════════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║                                                                              ║\n");
-    printf("║   OUTSIDE TEMP     ❄️   %6.1f°C                                              ║\n", state->outside_temp);
-    printf("║                                                                              ║\n");
-    printf("║   ┌────────────────────────────────────────────────────────────────────┐     ║\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ DISTRICT HEATING - B47/Z3            ║\n");
+    printf("║ FrostyGoop (libmodbus 3.1.2)         ║\n");
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ Outside: ❄️  %6.1f°C                 ║\n", state->outside_temp);
+    printf("╠══════════════════════════════════════╣\n");
 
     /* Building zone header with status indicators */
     if (state->status >= STATUS_WARNING) {
-        printf("║   │  BUILDING ZONE                                        %s%s %s %s%s   │     ║\n",
+        printf("║ ZONE      %s%s %s %s%s               ║\n",
                status_color, status_icon, status_icon, status_icon, COLOR_RESET);
     } else {
-        printf("║   │  BUILDING ZONE                                                     │     ║\n");
+        printf("║ ZONE                                 ║\n");
     }
 
-    printf("║   │                                                                    │     ║\n");
-    printf("║   │              INSIDE TEMPERATURE                                    │     ║\n");
-    printf("║   │      ┌──────────────────────────────────────────────────┐          │     ║\n");
+    printf("╠──────────────────────────────────────╣\n");
+    printf("║ INSIDE TEMP     -20       40°C       ║\n");
+    printf("║ ┌──────────────────────┐             ║\n");
 
     /* Temperature bar */
-    printf("║");
     render_temp_bar(state->inside_temp, state->setpoint);
-    printf("     ║\n");
 
-    printf("║   │      └──────────────────────────────────────────────────┘          │     ║\n");
-    printf("║   │      -20        0        10        20        30       40°C         │     ║\n");
+    printf("║ └──────────────────────┘             ║\n");
 
     /* Current temperature display */
     if (state->status >= STATUS_CRITICAL) {
-        printf("║   │                           %s%6.1f°C %s%s                              │     ║\n",
+        printf("║    %s%6.1f°C %s%s                       ║\n",
                COLOR_RED, state->inside_temp, status_icon, COLOR_RESET);
     } else if (state->status == STATUS_WARNING) {
-        printf("║   │                           %s%6.1f°C %s%s                              │     ║\n",
+        printf("║    %s%6.1f°C %s%s                       ║\n",
                COLOR_YELLOW, state->inside_temp, status_icon, COLOR_RESET);
     } else {
-        printf("║   │                           %s%6.1f°C%s  (Setpoint: %.1f°C)              │     ║\n",
+        printf("║    %s%6.1f°C%s (Set:%.1f)               ║\n",
                COLOR_GREEN, state->inside_temp, COLOR_RESET, state->setpoint);
     }
 
-    printf("║   │                                                                    │     ║\n");
-
     /* Valve and radiator display */
     const char *valve_color = state->controller_running ? COLOR_GREEN : COLOR_RED;
-    const char *valve_warning = state->controller_running ? "" : " ⚠";
+    const char *valve_warning = state->controller_running ? "" : "⚠";
 
-    printf("║   │      ┌─────────┐     ┌──────────────┐                              │     ║\n");
-    printf("║   │      │ ░░░░░░░ │ ◄── │ VALVE: %s%3d%%%s │ ◄── Supply %.0f°C%s           │     ║\n",
-           valve_color, state->valve_actual, COLOR_RESET, state->supply_temp, valve_warning);
+    printf("╠──────────────────────────────────────╣\n");
+    printf("║ ┌───────┐  VALVE: %s%3d%%%s %s           ║\n",
+           valve_color, state->valve_actual, COLOR_RESET, valve_warning);
 
     /* Radiator state based on temperature */
     if (state->inside_temp <= TEMP_CRITICAL) {
-        printf("║   │      │   ICE   │     └──────────────┘                              │     ║\n");
-        printf("║   │      │ FORMING │                                                   │     ║\n");
+        printf("║ │  ICE  │  Supply: %.0f°C             ║\n", state->supply_temp);
     } else if (state->valve_actual > 50) {
-        printf("║   │      │ ▓▓▓▓▓▓▓ │     └──────────────┘                              │     ║\n");
-        printf("║   │      │  (HOT)  │                                                   │     ║\n");
+        printf("║ │▓▓▓HOT▓│  Supply: %.0f°C             ║\n", state->supply_temp);
     } else if (state->valve_actual > 0) {
-        printf("║   │      │ ░░░░░░░ │     └──────────────┘                              │     ║\n");
-        printf("║   │      │ (WARM)  │                                                   │     ║\n");
+        printf("║ │░░WARM░│  Supply: %.0f°C             ║\n", state->supply_temp);
     } else {
-        printf("║   │      │         │     └──────────────┘                              │     ║\n");
-        printf("║   │      │ (COLD)  │                                                   │     ║\n");
+        printf("║ │ COLD  │  Supply: %.0f°C             ║\n", state->supply_temp);
     }
 
-    printf("║   │      └─────────┘     Power: %5.1f kW                               │     ║\n", state->heater_power);
-    printf("║   │                                                                    │     ║\n");
-    printf("║   └────────────────────────────────────────────────────────────────────┘     ║\n");
-    printf("║                                                                              ║\n");
+    printf("║ └───────┘  Power: %5.1f kW           ║\n", state->heater_power);
+    printf("╠══════════════════════════════════════╣\n");
 
     /* Mode and status line */
-    printf("║   MODE: [%s%s%s]     STATUS: %s%s %s%s     RUNTIME: %s               ║\n",
+    printf("║ %s%s%s %s%s%s%s  %s            ║\n",
            state->mode == MODE_AUTO ? COLOR_GREEN : COLOR_YELLOW,
-           state->mode == MODE_AUTO ? "AUTO  " : "MANUAL",
+           state->mode == MODE_AUTO ? "AUTO" : "MANU",
            COLOR_RESET,
            status_color, status_icon, status_str, COLOR_RESET,
            runtime_str);
 
-    printf("║                                                                              ║\n");
-
     /* Warning messages */
     if (strlen(warning1) > 0) {
-        printf("║   %s%-70s%s   ║\n", COLOR_RED, warning1, COLOR_RESET);
+        printf("║ %s! CONTROLLER CRASHED%s               ║\n", COLOR_RED, COLOR_RESET);
     }
     if (strlen(warning2) > 0) {
-        printf("║   %s%-70s%s   ║\n", COLOR_RED, warning2, COLOR_RESET);
-    }
-    if (strlen(warning1) > 0 || strlen(warning2) > 0) {
-        printf("║                                                                              ║\n");
+        printf("║ %s! TEMP DROPPING%s                    ║\n", COLOR_RED, COLOR_RESET);
     }
 
-    printf("╠══════════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║  Modbus TCP: %s:%-5d | Clients: %d | PLC: %s%-7s%s                       ║\n",
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ %s:%d C:%d %s%s%s        ║\n",
            ip, port, clients, plc_color, plc_status, COLOR_RESET);
-    printf("╚══════════════════════════════════════════════════════════════════════════════╝\n");
+    printf("╚══════════════════════════════════════╝\n");
 
     fflush(stdout);
 }
@@ -249,36 +231,31 @@ void display_render_failure(const process_state_t *state) {
 
     display_clear();
 
-    printf("╔══════════════════════════════════════════════════════════════════════════════╗\n");
-    printf("║            DISTRICT HEATING CONTROLLER - BUILDING 47, ZONE 3                 ║\n");
-    printf("║               FrostyGoop Target Simulation (libmodbus 3.1.2)                 ║\n");
-    printf("╠══════════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║                                                                              ║\n");
-    printf("║                                                                              ║\n");
-    printf("║                     %s██████████████████████████████████%s                       ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                   %s██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░██%s                     ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░                                ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    ❄️  PIPES FROZEN / BURST  ❄️   ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░                                ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    Final Temperature: %5.1f°C   ░░██%s                   ║\n", COLOR_BG_RED, state->inside_temp, COLOR_RESET);
-    printf("║                 %s██░░    Time without heat: %s  ░░██%s                   ║\n", COLOR_BG_RED, runtime_str, COLOR_RESET);
-    printf("║                 %s██░░                                ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    BUILDING DAMAGE:            ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    • Burst pipes               ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    • Water flooding            ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░    • Structure damage          ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                 %s██░░                                ░░██%s                   ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                   %s██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░██%s                     ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                     %s██████████████████████████████████%s                       ║\n", COLOR_BG_RED, COLOR_RESET);
-    printf("║                                                                              ║\n");
-    printf("║   %sROOT CAUSE:%s Controller crash via CVE-2019-14462 exploit                   ║\n", COLOR_YELLOW, COLOR_RESET);
-    printf("║   %sATTACK VECTOR:%s FrostyGoop-style malformed Modbus TCP packet               ║\n", COLOR_YELLOW, COLOR_RESET);
-    printf("║                                                                              ║\n");
-    printf("║   %s💀 CATASTROPHIC FAILURE - SIMULATION HALTED 💀%s                             ║\n", COLOR_RED, COLOR_RESET);
-    printf("║                                                                              ║\n");
-    printf("╠══════════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║  Restart with: docker-compose restart plc                                    ║\n");
-    printf("╚══════════════════════════════════════════════════════════════════════════════╝\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ DISTRICT HEATING - B47/Z3            ║\n");
+    printf("║ FrostyGoop (libmodbus 3.1.2)         ║\n");
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║                                      ║\n");
+    printf("║  %s╔════════════════════════════╗%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║ ❄️  PIPES FROZEN / BURST ❄️ ║%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s╠════════════════════════════╣%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║ Final Temp: %5.1f°C       ║%s    ║\n", COLOR_BG_RED, state->inside_temp, COLOR_RESET);
+    printf("║  %s║ No heat:    %s     ║%s    ║\n", COLOR_BG_RED, runtime_str, COLOR_RESET);
+    printf("║  %s╠════════════════════════════╣%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║ DAMAGE:                    ║%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║  • Burst pipes             ║%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║  • Water flooding          ║%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s║  • Structure damage        ║%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║  %s╚════════════════════════════╝%s    ║\n", COLOR_BG_RED, COLOR_RESET);
+    printf("║                                      ║\n");
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ %sROOT CAUSE:%s CVE-2019-14462         ║\n", COLOR_YELLOW, COLOR_RESET);
+    printf("║ %sATTACK:%s FrostyGoop Modbus          ║\n", COLOR_YELLOW, COLOR_RESET);
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ %s💀 CATASTROPHIC FAILURE 💀%s          ║\n", COLOR_RED, COLOR_RESET);
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ Restart: docker compose restart plc  ║\n");
+    printf("╚══════════════════════════════════════╝\n");
 
     fflush(stdout);
 }

@@ -44,27 +44,28 @@ tmux send-keys -t "$SESSION:0.1" "echo '=== Snort IDS (Port 503) ===' && echo 'W
 
 # Pane 2: User terminal with helpful message
 tmux send-keys -t "$SESSION:0.2" "cat << 'EOF'
-╔════════════════════════════════════════════════════════════════╗
-║  CVE-2022-20685 Demo - Snort IDS DoS Attack                    ║
-╠════════════════════════════════════════════════════════════════╣
-║                                                                ║
-║  Step 1: Wait for containers to start (watch left panes)       ║
-║                                                                ║
-║  Step 2: Verify Snort is working:                              ║
-║  echo -ne '\\x00\\x01\\x00\\x00\\x00\\x06\\x01\\x03\\x00\\x00\\x00\\x01' | nc -w 2 localhost 503 | xxd   ║
-║                                                                ║
-║  Step 3: Attack Snort IDS:                                     ║
-║  ./cve_tools/cve_20685_attack 127.0.0.1 503                    ║
-║                                                                ║
-║  Step 4: Verify Snort is frozen (should timeout):              ║
-║  echo -ne '\\x00\\x01\\x00\\x00\\x00\\x06\\x01\\x03\\x00\\x00\\x00\\x01' | nc -w 5 localhost 503 | xxd   ║
-║                                                                ║
-║  Step 5: Check CPU (should be 100%):                           ║
-║  sudo docker exec ics-snort top -b -n 1 | grep snort           ║
-║                                                                ║
-║  Reset: sudo docker compose restart snort                      ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════╗
+║ CVE-2022-20685 Demo                  ║
+║ Snort IDS DoS Attack                 ║
+╠══════════════════════════════════════╣
+║ 1. Wait for containers to start      ║
+║                                      ║
+║ 2. Verify Snort works:               ║
+║  nc -w2 localhost 503                ║
+║                                      ║
+║ 3. Attack Snort IDS:                 ║
+║  ./cve_tools/cve_20685_attack \\      ║
+║    127.0.0.1 503                     ║
+║                                      ║
+║ 4. Verify frozen (timeout):          ║
+║  nc -w5 localhost 503                ║
+║                                      ║
+║ 5. Check CPU (should be 100%):       ║
+║  docker exec ics-snort top -bn1      ║
+║                                      ║
+║ Reset:                               ║
+║  docker compose restart snort        ║
+╚══════════════════════════════════════╝
 EOF
 " C-m
 

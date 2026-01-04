@@ -51,29 +51,27 @@ tmux send-keys -t "$SESSION:0.2" "echo '=== Snort IDS (Port 503) ===' && echo 'W
 
 # Pane 3: User terminal with helpful message
 tmux send-keys -t "$SESSION:0.3" "cat << 'EOF'
-╔════════════════════════════════════════════════════════════════╗
-║  ICS Gateway Demo - User Terminal                              ║
-╠════════════════════════════════════════════════════════════════╣
-║                                                                ║
-║  Test Commands:                                                ║
-║                                                                ║
-║  # Read registers through each path:                           ║
-║  echo -ne '\\x00\\x01\\x00\\x00\\x00\\x06\\x01\\x03\\x00\\x00\\x00\\x01' | nc -w 2 localhost 502 | xxd   # seL4    ║
-║  echo -ne '\\x00\\x01\\x00\\x00\\x00\\x06\\x01\\x03\\x00\\x00\\x00\\x01' | nc -w 2 localhost 503 | xxd   # Snort   ║
-║  echo -ne '\\x00\\x01\\x00\\x00\\x00\\x06\\x01\\x03\\x00\\x00\\x00\\x01' | nc -w 2 localhost 5020 | xxd  # Direct  ║
-║                                                                ║
-║  # Attack tools:                                               ║
-║  ./cve_tools/cve_14462_attack 127.0.0.1 5020  # Attack PLC    ║
-║  ./cve_tools/cve_14462_attack 127.0.0.1 502   # Through seL4  ║
-║  ./cve_tools/cve_20685_attack 127.0.0.1 503   # DoS Snort     ║
-║                                                                ║
-║  # Check Snort CPU after attack:                               ║
-║  sudo docker exec ics-snort top -b -n 1 | grep snort           ║
-║                                                                ║
-║  # Restart containers:                                         ║
-║  sudo docker compose restart snort                             ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════╗
+║ ICS Gateway Demo                     ║
+╠══════════════════════════════════════╣
+║ Read registers:                      ║
+║  nc localhost 502  # seL4            ║
+║  nc localhost 503  # Snort           ║
+║  nc localhost 5020 # Direct          ║
+║                                      ║
+║ Attack tools:                        ║
+║  ./cve_tools/cve_14462_attack \\      ║
+║    127.0.0.1 5020  # Attack PLC      ║
+║  ./cve_tools/cve_14462_attack \\      ║
+║    127.0.0.1 502   # Through seL4    ║
+║  ./cve_tools/cve_20685_attack \\      ║
+║    127.0.0.1 503   # DoS Snort       ║
+║                                      ║
+║ Check Snort CPU after attack:        ║
+║  docker exec ics-snort top -bn1      ║
+║                                      ║
+║ Restart: docker compose restart      ║
+╚══════════════════════════════════════╝
 EOF
 " C-m
 

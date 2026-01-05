@@ -17,7 +17,7 @@ This project demonstrates an alternative: a **protocol-break** gateway using the
 
 | Aspect | Protocol-Break (seL4) | Packet-Forwarding (Snort) |
 |--------|----------------------|---------------------------|
-| **CVE-2019-14462** | BLOCKED (length validation) | Requires specific rule |
+| **CVE-2019-14462** | BLOCKED (length validation) | DETECTED (Quickdraw rules) |
 | **CVE-2022-20685** | IMMUNE (no preprocessor) | VULNERABLE (IDS DoS) |
 | **Unknown variants** | BLOCKED (structural validation) | MISSED (no signature) |
 | **TCP state attacks** | BLOCKED (connection terminated) | Possible |
@@ -197,7 +197,7 @@ Client ────TCP1────► seL4 ────TCP2────► PLC
 | Directory | Description |
 |-----------|-------------|
 | `gateway/` | seL4 gateway container (QEMU + seL4 kernel) |
-| `snort/` | Snort 2.9.18 IDS container (vulnerable to CVE-2022-20685) |
+| `snort/` | Snort 2.9.18 IDS with Digital Bond Quickdraw rules (vulnerable to CVE-2022-20685) |
 | `plc/` | District heating simulation (vulnerable libmodbus 3.1.2) |
 | `cve_tools/` | Attack tools for CVE demonstrations |
 | `scripts/` | Utility and experiment scripts |
@@ -205,7 +205,7 @@ Client ────TCP1────► seL4 ────TCP2────► PLC
 
 ## PLC Simulation
 
-The PLC simulates a district heating controller with Modbus registers:
+The PLC simulates a district heating controller with multi-master support (thread-per-client architecture, typical of modern PLCs). Modbus registers:
 
 | Register | Description | R/W |
 |----------|-------------|-----|
@@ -227,6 +227,7 @@ This project contains **intentionally vulnerable code** for defensive security r
 - [CVE-2019-14462](https://nvd.nist.gov/vuln/detail/CVE-2019-14462) - libmodbus heap buffer overflow
 - [CVE-2022-20685](https://nvd.nist.gov/vuln/detail/CVE-2022-20685) - Snort Modbus preprocessor DoS
 - [seL4 Microkernel](https://sel4.systems/) - Formally verified microkernel
+- [Digital Bond Quickdraw](https://github.com/digitalbond/Quickdraw-Snort) - Industry-standard ICS/SCADA Snort rules
 - [Claroty Team82](https://claroty.com/team82/research/blinding-snort-breaking-the-modbus-ot-preprocessor) - Snort CVE-2022-20685 vulnerability analysis
 - [Dragos FrostyGoop Report](https://www.dragos.com/blog/protect-against-frostygoop-ics-malware-targeting-operational-technology) - ICS malware analysis (Jan 2024 Ukraine attack)
 - [The Record - FrostyGoop](https://therecord.media/frostygoop-malware-ukraine-heat) - 600 Ukrainian households without heat

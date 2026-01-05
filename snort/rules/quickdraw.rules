@@ -84,32 +84,35 @@ alert tcp $MODBUS_CLIENT any -> $MODBUS_SERVER $MODBUS_PORTS ( \
 # =============================================================================
 # Access Control Rules (requires MODBUS_CLIENT whitelist)
 # =============================================================================
+# NOTE: These rules are DISABLED because MODBUS_CLIENT is set to "any"
+# Snort does not allow "!any" in rules.
+# To enable: set MODBUS_CLIENT to specific IPs in snort.conf, then uncomment.
 
 # Unauthorized Read Request
 # Triggers when client IP is NOT in MODBUS_CLIENT list
 # Function codes: 01,02,03,04,07,0B,0C,11,14,17,18,2B (read operations)
-alert tcp !$MODBUS_CLIENT any -> $MODBUS_SERVER $MODBUS_PORTS ( \
-    flow:from_client,established; \
-    content:"|00 00|"; offset:2; depth:2; \
-    pcre:"/[\S\s]{3}(\x01|\x02|\x03|\x04|\x07|\x0B|\x0C|\x11|\x14|\x17|\x18|\x2B)/AR"; \
-    msg:"QUICKDRAW: Modbus TCP - Unauthorized Read Request to PLC"; \
-    reference:url,github.com/digitalbond/Quickdraw-Snort; \
-    classtype:bad-unknown; \
-    sid:1111006; rev:2; priority:2; \
-)
+# alert tcp !$MODBUS_CLIENT any -> $MODBUS_SERVER $MODBUS_PORTS ( \
+#     flow:from_client,established; \
+#     content:"|00 00|"; offset:2; depth:2; \
+#     pcre:"/[\S\s]{3}(\x01|\x02|\x03|\x04|\x07|\x0B|\x0C|\x11|\x14|\x17|\x18|\x2B)/AR"; \
+#     msg:"QUICKDRAW: Modbus TCP - Unauthorized Read Request to PLC"; \
+#     reference:url,github.com/digitalbond/Quickdraw-Snort; \
+#     classtype:bad-unknown; \
+#     sid:1111006; rev:2; priority:2; \
+# )
 
 # Unauthorized Write Request
 # Triggers when client IP is NOT in MODBUS_CLIENT list
 # Function codes: 05,06,0F,10,15,16 (write operations)
-alert tcp !$MODBUS_CLIENT any -> $MODBUS_SERVER $MODBUS_PORTS ( \
-    flow:from_client,established; \
-    content:"|00 00|"; offset:2; depth:2; \
-    pcre:"/[\S\s]{3}(\x05|\x06|\x0F|\x10|\x15|\x16)/AR"; \
-    msg:"QUICKDRAW: Modbus TCP - Unauthorized Write Request to PLC"; \
-    reference:url,github.com/digitalbond/Quickdraw-Snort; \
-    classtype:bad-unknown; \
-    sid:1111007; rev:2; priority:1; \
-)
+# alert tcp !$MODBUS_CLIENT any -> $MODBUS_SERVER $MODBUS_PORTS ( \
+#     flow:from_client,established; \
+#     content:"|00 00|"; offset:2; depth:2; \
+#     pcre:"/[\S\s]{3}(\x05|\x06|\x0F|\x10|\x15|\x16)/AR"; \
+#     msg:"QUICKDRAW: Modbus TCP - Unauthorized Write Request to PLC"; \
+#     reference:url,github.com/digitalbond/Quickdraw-Snort; \
+#     classtype:bad-unknown; \
+#     sid:1111007; rev:2; priority:1; \
+# )
 
 # =============================================================================
 # Protocol Violation / DoS Detection

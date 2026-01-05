@@ -105,6 +105,7 @@ COPY snort.conf /etc/snort/snort.conf
 COPY classification.config /etc/snort/classification.config
 COPY rules/modbus.rules /etc/snort/rules/modbus.rules
 COPY rules/local.rules /etc/snort/rules/local.rules
+COPY rules/quickdraw.rules /etc/snort/rules/quickdraw.rules
 COPY start-snort.sh /usr/local/bin/
 COPY setup-network.sh /usr/local/bin/
 COPY perf-monitor.sh /usr/local/bin/

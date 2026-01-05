@@ -104,7 +104,28 @@ flowchart TD
 |------|------|--------|--------|
 | Direct | 5020 | **CRASH** | No validation |
 | seL4 Gateway | 502 | **BLOCKED** | Length field validated against actual data |
-| Snort IDS | 503 | **DEPENDS** | Requires specific detection rule |
+| Snort IDS | 503 | **DETECTED** | Quickdraw rule SID:1111012 |
+
+### Snort Detection Rule
+
+The [Digital Bond Quickdraw](https://github.com/digitalbond/Quickdraw-Snort) rules include MBAP length validation:
+
+```snort
+# SID 1111012 - Detects MBAP length mismatch
+alert tcp any any <> $MODBUS_SERVER $MODBUS_PORTS ( \
+    flow:established; \
+    content:"|00 00|"; offset:2; depth:2; \
+    byte_jump:2,4; \
+    isdataat:0,relative; \
+    msg:"QUICKDRAW: Modbus TCP - MBAP Length Mismatch (CVE-2019-14462)"; \
+    sid:1111012; \
+)
+```
+
+**How it works:**
+1. `byte_jump:2,4` - Read MBAP length at offset 4, jump forward
+2. `isdataat:0,relative` - Check if more data exists after jump
+3. If packet has more data than declared length → **ALERT**
 
 ### How seL4 Blocks This Attack
 

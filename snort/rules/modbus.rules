@@ -112,6 +112,52 @@ alert tcp any any -> $MODBUS_SERVER $MODBUS_PORTS ( \
 )
 
 # ============================================================
+# CVE-2022-0367 Detection
+# Heap buffer underflow in libmodbus (start_address feature)
+# Attack: Write address < start_registers causes negative array index
+#
+# Packet structure for Function 0x17 (Write and Read Registers):
+#   Offset 0-6:   MBAP Header
+#   Offset 7:     Function code (0x17)
+#   Offset 8-9:   Read starting address
+#   Offset 10-11: Read quantity
+#   Offset 12-13: Write starting address  <-- CHECK THIS
+#   Offset 14-15: Write quantity
+#   Offset 16:    Write byte count
+#   Offset 17+:   Write data
+#
+# For PLC with start_registers=100, write_address must be >= 100 (0x0064)
+# Attack uses write_address < 100 to trigger heap underflow
+# ============================================================
+
+# Detect Write and Read Registers (0x17) with write address below valid range
+# This detects CVE-2022-0367 exploitation attempts
+alert tcp any any -> $MODBUS_SERVER $MODBUS_PORTS ( \
+    msg:"MODBUS CVE-2022-0367 Write-Read Registers Invalid Write Address"; \
+    flow:to_server,established; \
+    content:"|00 00|"; offset:2; depth:2; \
+    content:"|17|"; offset:7; depth:1; \
+    byte_test:2,<,100,12,big; \
+    classtype:attempted-admin; \
+    priority:1; \
+    reference:cve,2022-0367; \
+    reference:url,github.com/stephane/libmodbus/issues/614; \
+    sid:1000040; \
+    rev:1; \
+)
+
+# Also detect function 0x17 for monitoring purposes
+alert tcp any any -> $MODBUS_SERVER $MODBUS_PORTS ( \
+    msg:"MODBUS Write and Read Registers Request (FC 0x17)"; \
+    flow:to_server,established; \
+    modbus_func:23; \
+    classtype:protocol-command-decode; \
+    priority:2; \
+    sid:1000033; \
+    rev:1; \
+)
+
+# ============================================================
 # Illegal/Reserved Function Codes
 # ============================================================
 

@@ -17,10 +17,13 @@ CFLAGS_RELEASE = $(CFLAGS_COMMON) -O2
 # Debug build
 CFLAGS_DEBUG = $(CFLAGS_COMMON) -g -O0 -DDEBUG
 
-# ASAN build
-CFLAGS_ASAN = $(CFLAGS_COMMON) -g -O1 -fsanitize=address -fno-omit-frame-pointer
+# ASAN build (with CVE-2022-0367 enabled)
+CFLAGS_ASAN = $(CFLAGS_COMMON) -g -O1 -fsanitize=address -fno-omit-frame-pointer -DCVE_2022_0367
 
-.PHONY: all release debug asan clean
+# CVE-2022-0367 build (without ASAN - for crash demonstration)
+CFLAGS_CVE0367 = $(CFLAGS_COMMON) -O2 -DCVE_2022_0367
+
+.PHONY: all release debug asan cve0367 clean
 
 all: release
 
@@ -33,6 +36,9 @@ debug: $(TARGET)
 asan: CFLAGS = $(CFLAGS_ASAN)
 asan: LDFLAGS += -fsanitize=address
 asan: $(TARGET)
+
+cve0367: CFLAGS = $(CFLAGS_CVE0367)
+cve0367: $(TARGET)
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(SRCS) $(LDFLAGS)

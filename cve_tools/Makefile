@@ -5,7 +5,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LDFLAGS = -lm
 
-TOOLS = cve_14462_attack cve_20685_attack tcp_segmentation_attack latency_benchmark
+TOOLS = cve_14462_attack cve_20685_attack cve_0367_attack tcp_segmentation_attack latency_benchmark
 
 .PHONY: all clean
 
@@ -15,6 +15,9 @@ cve_14462_attack: cve_14462_attack.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 cve_20685_attack: cve_20685_attack.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+cve_0367_attack: cve_0367_attack.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 tcp_segmentation_attack: tcp_segmentation_attack.c

@@ -100,12 +100,21 @@ RUN echo "=== Installed Dynamic Preprocessors ===" && \
     echo "=== Dynamic Engine ===" && \
     ls -la /usr/local/lib/snort_dynamicengine/
 
-# Copy configuration files
+# Copy configuration files - all profiles
 COPY snort.conf /etc/snort/snort.conf
+COPY snort-quickdraw.conf /etc/snort/snort-quickdraw.conf
+COPY snort-talos-full.conf /etc/snort/snort-talos-full.conf
+COPY snort-modbus.conf /etc/snort/snort-modbus.conf
+COPY snort-combined.conf /etc/snort/snort-combined.conf
 COPY classification.config /etc/snort/classification.config
+
+# Copy all rule files
 COPY rules/modbus.rules /etc/snort/rules/modbus.rules
 COPY rules/local.rules /etc/snort/rules/local.rules
 COPY rules/quickdraw.rules /etc/snort/rules/quickdraw.rules
+COPY rules/talos-modbus.rules /etc/snort/rules/talos-modbus.rules
+
+# Copy scripts
 COPY start-snort.sh /usr/local/bin/
 COPY setup-network.sh /usr/local/bin/
 COPY perf-monitor.sh /usr/local/bin/

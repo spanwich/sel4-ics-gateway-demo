@@ -28,9 +28,17 @@
  * ========================================================================== */
 
 #define SERVER_ADDRESS      "0.0.0.0"
+#ifndef SERVER_PORT
 #define SERVER_PORT         502
+#endif
 #define NB_REGISTERS        10
 #define MAX_CONNECTIONS     64
+
+/* CVE-2022-0367: When using start_registers offset, the bounds check has a bug
+ * that allows heap underflow. Enable with -DCVE_2022_0367 compile flag. */
+#ifdef CVE_2022_0367
+#define START_REGISTERS     100  /* Non-zero to enable CVE-2022-0367 */
+#endif
 
 #define LOG_FILE_ENV        "LOG_FILE"
 #define DEFAULT_LOG_FILE    "/logs/plc.log"
@@ -242,7 +250,19 @@ int main(void) {
     }
 
     /* Create register mapping */
+#ifdef CVE_2022_0367
+    /* Use start_address API with non-zero offset to enable CVE-2022-0367 vulnerability */
+    g_mb_mapping = modbus_mapping_new_start_address(
+        0, 0,                           /* bits: start=0, nb=0 */
+        0, 0,                           /* input_bits: start=0, nb=0 */
+        START_REGISTERS, NB_REGISTERS,  /* registers: start=100, nb=10 (addresses 100-109) */
+        0, 0                            /* input_registers: start=0, nb=0 */
+    );
+    log_msg("INFO", "CVE-2022-0367 mode: registers at address %d-%d",
+            START_REGISTERS, START_REGISTERS + NB_REGISTERS - 1);
+#else
     g_mb_mapping = modbus_mapping_new(0, 0, NB_REGISTERS, 0);
+#endif
     if (!g_mb_mapping) {
         log_msg("ERROR", "Failed to allocate register mapping: %s", modbus_strerror(errno));
         goto cleanup;

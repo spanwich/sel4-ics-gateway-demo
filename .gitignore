@@ -10,15 +10,26 @@ logs/
 *.a
 cve_tools/cve_14462_attack
 cve_tools/cve_20685_attack
+cve_tools/cve_0367_attack
 cve_tools/tcp_segmentation_attack
 cve_tools/latency_benchmark
 cve_tools/archive/*
 !cve_tools/archive/*.c
 
+# Third-party exploit repos (clone separately)
+cve_tools/cve-2024-1086/
+
+# Vulnerable libmodbus for CVE-2022-0367 (clone separately)
+plc/libmodbus_vulnerable_0367/
+
+# Analysis documents (internal use only)
+cve_tools/CVE-2022-0367-analysis.md
+
 # Snort source (downloaded, can be re-fetched)
 snort/snort-2.9.18/
 
 # Build artifacts
+plc/build_static/
 plc/libmodbus_3.1.2/local-install/
 plc/libmodbus_3.1.2/.libs/
 plc/libmodbus_3.1.2/src/.libs/

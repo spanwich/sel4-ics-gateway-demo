@@ -27,6 +27,7 @@ services:
       - NET_RAW
     devices:
       - /dev/net/tun:/dev/net/tun
+      - /dev/kvm:/dev/kvm  # For x86 KVM acceleration
     networks:
       ics-untrusted:
         ipv4_address: 192.168.96.10
@@ -36,6 +37,8 @@ services:
       - "502:502"
     volumes:
       - ./logs:/logs
+    environment:
+      - GATEWAY_ARCH=arm  # Change to 'x86' for x86 gateway with KVM
     depends_on:
       - plc
     stdin_open: true

@@ -65,7 +65,8 @@ docker exec ics-plc ip addr show 2>/dev/null | grep -E "inet |eth"
 
 echo ""
 echo "=== 15. Gateway Log (last 20 lines) ==="
-tail -20 /home/iamfo470/Projects/logs/gateway.log 2>/dev/null || docker logs ics-gateway 2>&1 | tail -20
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+tail -20 "${SCRIPT_DIR}/../logs/gateway.log" 2>/dev/null || docker logs ics-gateway 2>&1 | tail -20
 
 echo ""
 echo "=========================================="

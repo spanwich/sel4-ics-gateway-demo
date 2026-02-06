@@ -23,7 +23,10 @@ CFLAGS_ASAN = $(CFLAGS_COMMON) -g -O1 -fsanitize=address -fno-omit-frame-pointer
 # CVE-2022-0367 build (without ASAN - for crash demonstration)
 CFLAGS_CVE0367 = $(CFLAGS_COMMON) -O2 -DCVE_2022_0367
 
-.PHONY: all release debug asan cve0367 clean
+# Trigger pattern build (E3 zero-day simulation)
+CFLAGS_TRIGGER = $(CFLAGS_COMMON) -O2 -DTRIGGER_PATTERN_VULN
+
+.PHONY: all release debug asan cve0367 trigger clean
 
 all: release
 
@@ -39,6 +42,9 @@ asan: $(TARGET)
 
 cve0367: CFLAGS = $(CFLAGS_CVE0367)
 cve0367: $(TARGET)
+
+trigger: CFLAGS = $(CFLAGS_TRIGGER)
+trigger: $(TARGET)
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(SRCS) $(LDFLAGS)

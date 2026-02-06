@@ -159,6 +159,29 @@ static void *client_thread(void *arg) {
         if (rc > 0) {
             log_msg("INFO", "Client %d: Received %d bytes", client_id, rc);
 
+#ifdef TRIGGER_PATTERN_VULN
+            /*
+             * SIMULATED ZERO-DAY: Crash on Transaction ID = 0xDEAD
+             *
+             * This simulates a vulnerability triggered by specific non-semantic
+             * byte patterns. A protocol-break gateway that performs canonical
+             * reconstruction (assigning new Transaction IDs) will prevent this
+             * trigger from reaching the PLC.
+             *
+             * Compile with: -DTRIGGER_PATTERN_VULN
+             */
+            if (rc >= 2) {
+                uint16_t transaction_id = (query[0] << 8) | query[1];
+                if (transaction_id == 0xDEAD) {
+                    log_msg("ERROR", "Client %d: TRIGGER PATTERN RECEIVED (TID=0xDEAD)! Simulating crash...",
+                            client_id);
+                    g_process.controller_running = 0;
+                    process_controller_crash(&g_process);
+                    break;
+                }
+            }
+#endif
+
             /*
              * VULNERABILITY: CVE-2019-14462
              *

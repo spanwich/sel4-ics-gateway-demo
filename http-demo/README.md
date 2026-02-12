@@ -9,7 +9,16 @@ docker build -t sel4-http-gateway .
 docker run --rm -it -p 8443:8443 sel4-http-gateway
 ```
 
-Wait ~10 seconds for `[ControlPlane] Ready:` to appear, then open a second terminal:
+Wait ~10 seconds for `[ControlPlane] Ready:` to appear.
+
+### Web Dashboard (Browser)
+
+Open **https://localhost:8443** in your browser and accept the self-signed certificate warning.
+The dashboard provides a web-based login interface to interact with the gateway.
+
+### curl Examples (Terminal)
+
+From a second terminal:
 
 ```bash
 # 1. Unauthenticated request -> 403 Forbidden
@@ -21,13 +30,10 @@ curl -sk -X POST -d '{"username":"admin","password":"admin456"}' https://localho
 # 3. Authenticated request -> 200 OK
 curl -sk https://localhost:8443/api/status
 
-# 4. Web dashboard
-curl -sk https://localhost:8443/
-
-# 5. Logout -> 200 OK
+# 4. Logout -> 200 OK
 curl -sk -X POST https://localhost:8443/api/logout
 
-# 6. After logout -> 403 Forbidden
+# 5. After logout -> 403 Forbidden
 curl -sk https://localhost:8443/api/status
 ```
 
